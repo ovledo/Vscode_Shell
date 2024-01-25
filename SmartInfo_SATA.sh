@@ -3,9 +3,9 @@
 bootdisk=$(df -h | grep -i boot | awk '{print $1}' | grep -iE "/dev/sd" | sed 's/[0-9]//g' | sort -u | awk -F "/" '{print $NF}')
 if test -z "$bootdisk"; then
 	bootdisk=$(df -h | grep -i boot | awk '{print $1}' | grep -iE "/dev/nvme" | sed 's/p[0-9]//g' | sort -u | awk -F "/" '{print $NF}')
-	echo -e "\n\nos disk os $bootdisk\n\n"
+	echo -e "\n\nos disk os $bootdisk\n"
 else
-	echo -e "\n\nos disk os $bootdisk\n\n"
+	echo -e "\n\nos disk os $bootdisk\n"
 fi
 
 function SmartInfo_log() {
@@ -69,7 +69,7 @@ if [ -d "smart_before" ]; then
 		sn_after=$(awk '$1=="'$sn'" {print $1}' after.log)
 
 		if [ "$sn_after" == "$sn" ]; then
-			echo -e "----------$sn is exiting ,not lost,check pass----------\n" >>result.log
+			echo -e "\n----------$sn is exiting ,not lost,check pass----------\n" >>result.log
 
 			slot_after=$(awk '$1=="'$sn'" {print $2}' after.log)
 			if [ "$slot_after" == "$slot_before" ]; then
