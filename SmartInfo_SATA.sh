@@ -15,26 +15,6 @@ function SmartInfo_log() {
 	Controller_Status=$(storcli64 /c0 show | grep Status | awk '{print $NF}')
 	Device_Status=$(storcli64 /c0 show | grep -i "pd list" -A 20 | grep HDD | awk '{print $3}' | sort -u)
 
-	# if [ "$Controller_Status" = "Success" ]; then
-	# 	if [ "$Device_Status" = "JBOD" ]; then
-	# 		for hdd in $(lsscsi | grep -i sd | grep -vw "$bootdisk" | awk -F "/" '{print $NF}'); do
-	# 			sn=$(smartctl -a -x /dev/"$hdd" |grep -i "serial" |awk '{print $NF}')
-	# 			smartctl -a -x /dev/"$hdd" >smart_"$1"_"$hdd"_"$sn".log
-	# 		done
-	# 	else
-	# 		dev=$(smartctl --scan | grep /dev/bud | awk '{print $1}' | uniq)
-	# 		for hdd in $(smartctl --scan | grep -i megaraid | awk '{print $3}' | awk -F "/" '{print $NF}'); do
-	# 			sn=$(smartctl -a -x -d "$hdd" "$dev" |grep -i "serial" |awk '{print $NF}')
-	# 			smartctl -a -x -d "$hdd" "$dev" >smart_"$1"_"$hdd"_"$sn".log
-	# 		done
-	# 	fi
-	# else
-	# 	for hdd in $(lsscsi | grep -i sd | grep -vw "$bootdisk" | awk -F "/" '{print $NF}'); do
-	# 		sn=$(smartctl -a -x /dev/"$hdd" |grep -i "serial" |awk '{print $NF}')
-	# 		smartctl -a -x /dev/"$hdd" >smart_"$1"_"$hdd"_"$sn".log
-	# 	done
-	# fi
-
 	if [ "$Controller_Status" = "Success" ] && [ "$Device_Status" != "JBOD" ]; then
 		dev=$(smartctl --scan | grep /dev/bud | awk '{print $1}' | uniq)
 		for hdd in $(smartctl --scan | grep -i megaraid | awk '{print $3}' | awk -F "/" '{print $NF}'); do
@@ -53,7 +33,7 @@ function SmartInfo_log() {
 	mkdir smart_"$1"
 
 	#198为"UNC"关键词
-	echo -e "SN\t\tSLOT 1    3    5    7    10   194  198  199  health ICRC" >"$1".log
+	echo "SN  SLOT  1  3  5  7  10  194  198  199  health ICRC" >"$1".log
 
 	while read hdd; do
 		sn=$(grep "Serial Number:" smart_"$1"_"$hdd"_*.log | awk '{print $NF}')
@@ -67,8 +47,12 @@ function SmartInfo_log() {
 		offline=$(grep "Offline_Uncorrectable" smart_"$1"_"$hdd"_"$sn".log | awk '{if($NF == 0) print "pass";else print "failed"}')
 		udma=$(grep "UDMA_CRC_Error_Count" smart_"$1"_"$hdd"_"$sn".log | awk '{if($NF == 0) print "pass";else print "failed"}')
 		icrc=$(grep -i "ICRC" smart_"$1"_"$hdd"_"$sn".log | awk '{print $3}')
-		echo -e "$sn\t\t$hdd  $read_error $spin $reall $seek $spin_Retry_Count $tem $offline $udma $health   $icrc" >>"$1".log
+		echo "$sn $hdd  $read_error $spin $reall $seek $spin_Retry_Count $tem $offline $udma $health   $icrc" >>"$1".log
 	done <HDD_Slot.log
+
+	column -t "$1".log >transit.log
+	cat transit.log >"$1".log
+
 	mv smart_"$1"_* smart_"$1"
 }
 
@@ -87,7 +71,7 @@ if [ -d "smart_before" ]; then
 			echo "**********$sn is exiting ,not lost,check pass***************" >>result.log
 
 			slot_after=$(cat after.log | awk '$1=="'$sn'" {print $2}')
-			if [ "$slot_after" == $slot_before ]; then
+			if [ "$slot_after" == "$slot_before" ]; then
 				echo " $sn slot ch098 eck pass.slot is $slot_after" >>result.log
 			else
 				echo " $sn slot check failed. slot is $slot_after" >>result.log
@@ -135,9 +119,12 @@ if [ -d "smart_before" ]; then
 
 	done
 
-	cat result.log | grep -i failed >failed.log
+	grep -i failed result.log >failed.log
 	mkdir result
-	mv *.log result
+	mv before.log result
+	mv after.log result
+	mv failed.log result
+	mv result.log result
 
 else
 	echo "create before_smart;and collect hdd"
