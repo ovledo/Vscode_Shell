@@ -20,13 +20,15 @@ function SmartInfo_log() {
 		for hdd in $(smartctl --scan | grep -i megaraid | awk '{print $3}' | awk -F "/" '{print $NF}'); do
 			sn=$(smartctl -a -x -d "$hdd" "$dev" | grep -i "serial" | awk '{print $NF}')
 			smartctl -a -x -d "$hdd" "$dev" >smart_"$1"_"$hdd"_"$sn".log
-			$hdd >>HDD_Slot.log
+			echo "$hdd" >>HDD_Slot.log
+			sort -u HDD_Slot.log
 		done
 	else
 		for hdd in $(lsscsi | grep -i sd | grep -vw "$bootdisk" | awk -F "/" '{print $NF}'); do
 			sn=$(smartctl -a -x /dev/"$hdd" | grep -i "serial" | awk '{print $NF}')
 			smartctl -a -x /dev/"$hdd" >smart_"$1"_"$hdd"_"$sn".log
 			echo "$hdd" >>HDD_Slot.log
+			sort -u HDD_Slot.log
 		done
 	fi
 
@@ -50,7 +52,7 @@ function SmartInfo_log() {
 		echo "$sn $hdd  $read_error $spin $reall $seek $spin_Retry_Count $tem $offline $udma $health   $icrc" >>"$1".log
 	done <HDD_Slot.log
 
-	column -t "$1".log >transit.log
+	column -t "$1".log > transit.log
 	cat transit.log >"$1".log
 
 	mv smart_"$1"_* smart_"$1"
