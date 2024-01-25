@@ -46,14 +46,14 @@ function SmartInfo_log() {
 		for hdd in $(lsscsi | grep -i sd | grep -vw "$bootdisk" | awk -F "/" '{print $NF}'); do
 			sn=$(smartctl -a -x /dev/"$hdd" | grep -i "serial" | awk '{print $NF}')
 			smartctl -a -x /dev/"$hdd" >smart_"$1"_"$hdd"_"$sn".log
-			$hdd >>HDD_Slot.log
+			echo "$hdd" >>HDD_Slot.log
 		done
 	fi
 
 	mkdir smart_"$1"
 
 	#198为"UNC"关键词
-	echo -e "SN\n\nSLOT 1    3    5    7    10   194  198  199  health ICRC" >"$1".log
+	echo -e "SN\t\tSLOT 1    3    5    7    10   194  198  199  health ICRC" >"$1".log
 
 	while read hdd; do
 		sn=$(grep "Serial Number:" smart_"$1"_"$hdd"_*.log | awk '{print $NF}')
@@ -67,7 +67,7 @@ function SmartInfo_log() {
 		offline=$(grep "Offline_Uncorrectable" smart_"$1"_"$hdd"_"$sn".log | awk '{if($NF == 0) print "pass";else print "failed"}')
 		udma=$(grep "UDMA_CRC_Error_Count" smart_"$1"_"$hdd"_"$sn".log | awk '{if($NF == 0) print "pass";else print "failed"}')
 		icrc=$(grep -i "ICRC" smart_"$1"_"$hdd"_"$sn".log | awk '{print $3}')
-		echo -e "$sn\n\n$slot  $read_error $spin $reall $seek $spin_Retry_Count $tem $offline $udma $health   $icrc" >>"$1".log
+		echo -e "$sn\t\t$hdd  $read_error $spin $reall $seek $spin_Retry_Count $tem $offline $udma $health   $icrc" >>"$1".log
 	done <HDD_Slot.log
 	mv smart_"$1"_* smart_"$1"
 }
