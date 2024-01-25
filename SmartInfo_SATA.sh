@@ -12,39 +12,51 @@ fi
 
 function SmartInfo_log() {
 
-	#判定硬盘状态，选择抓取smart信息方式
-	#(AHCI;HBA;Raid:VD/JBOD)
-
 	Controller_Status=$(storcli64 /c0 show | grep Status | awk '{print $NF}')
 	Device_Status=$(storcli64 /c0 show | grep -i "pd list" -A 20 | grep HDD | awk '{print $3}' | sort -u)
 
-	if [ "$Controller_Status" = "Success" ]; then
-		if [ "$Device_Status" = "JBOD" ]; then
-			for hdd in $(lsscsi | grep -i sd | grep -vw "$bootdisk" | awk -F "/" '{print $NF}'); do
-				sn=$(smartctl -a -x /dev/"$hdd" |grep -i "serial" |awk '{print $NF}')
-				smartctl -a -x /dev/"$hdd" >smart_"$1"_"$hdd"_"$sn".log
-			done
-		else
-			dev=$(smartctl --scan | grep /dev/bud | awk '{print $1}' | uniq)
-			for hdd in $(smartctl --scan | grep -i megaraid | awk '{print $3}' | awk -F "/" '{print $NF}'); do
-				sn=$(smartctl -a -x -d megaraid,192 /dev/bus/0 |grep -i "serial" |awk '{print $NF}')
-				smartctl -a -x -d "$hdd" "$dev" >smart_"$1"_"$hdd"_"$sn".log
-			done
-		fi
+	# if [ "$Controller_Status" = "Success" ]; then
+	# 	if [ "$Device_Status" = "JBOD" ]; then
+	# 		for hdd in $(lsscsi | grep -i sd | grep -vw "$bootdisk" | awk -F "/" '{print $NF}'); do
+	# 			sn=$(smartctl -a -x /dev/"$hdd" |grep -i "serial" |awk '{print $NF}')
+	# 			smartctl -a -x /dev/"$hdd" >smart_"$1"_"$hdd"_"$sn".log
+	# 		done
+	# 	else
+	# 		dev=$(smartctl --scan | grep /dev/bud | awk '{print $1}' | uniq)
+	# 		for hdd in $(smartctl --scan | grep -i megaraid | awk '{print $3}' | awk -F "/" '{print $NF}'); do
+	# 			sn=$(smartctl -a -x -d "$hdd" "$dev" |grep -i "serial" |awk '{print $NF}')
+	# 			smartctl -a -x -d "$hdd" "$dev" >smart_"$1"_"$hdd"_"$sn".log
+	# 		done
+	# 	fi
+	# else
+	# 	for hdd in $(lsscsi | grep -i sd | grep -vw "$bootdisk" | awk -F "/" '{print $NF}'); do
+	# 		sn=$(smartctl -a -x /dev/"$hdd" |grep -i "serial" |awk '{print $NF}')
+	# 		smartctl -a -x /dev/"$hdd" >smart_"$1"_"$hdd"_"$sn".log
+	# 	done
+	# fi
+
+	if [ "$Controller_Status" = "Success" ] && [ "$Device_Status" != "JBOD" ]; then
+		dev=$(smartctl --scan | grep /dev/bud | awk '{print $1}' | uniq)
+		for hdd in $(smartctl --scan | grep -i megaraid | awk '{print $3}' | awk -F "/" '{print $NF}'); do
+			sn=$(smartctl -a -x -d "$hdd" "$dev" | grep -i "serial" | awk '{print $NF}')
+			smartctl -a -x -d "$hdd" "$dev" >smart_"$1"_"$hdd"_"$sn".log
+			$hdd >>HDD_Slot.log
+		done
 	else
 		for hdd in $(lsscsi | grep -i sd | grep -vw "$bootdisk" | awk -F "/" '{print $NF}'); do
-			sn=$(smartctl -a -x /dev/"$hdd" |grep -i "serial" |awk '{print $NF}')
+			sn=$(smartctl -a -x /dev/"$hdd" | grep -i "serial" | awk '{print $NF}')
 			smartctl -a -x /dev/"$hdd" >smart_"$1"_"$hdd"_"$sn".log
+			$hdd >>HDD_Slot.log
 		done
 	fi
 
 	mkdir smart_"$1"
 
 	#198为"UNC"关键词
-	echo "SN       SLOT 1    3    5    7    10   194  198  199  health ICRC" >"$1".log
+	echo -e "SN\n\nSLOT 1    3    5    7    10   194  198  199  health ICRC" >"$1".log
 
-	for slot in $hdd;do
-		sn=$(grep "Serial Number:" smart_"$1"_"$hdd".log | awk '{print $NF}')
+	while read hdd; do
+		sn=$(grep "Serial Number:" smart_"$1"_"$hdd"_*.log | awk '{print $NF}')
 		health=$(grep -i health smart_"$1"_"$hdd"_"$sn".log | awk '{if ($NF == "PASSED") print "pass";else print "failed"}')
 		read_error=$(grep "Raw_Read_Error_Rate" smart_"$1"_"$hdd"_"$sn".log | awk '{if($4 > $6) print "pass";else print "failed"}')
 		spin=$(grep "Spin_Up_Time" smart_"$1"_"$hdd"_"$sn".log | awk '{if($4 > $6) print "pass";else print "failed"}')
@@ -55,8 +67,8 @@ function SmartInfo_log() {
 		offline=$(grep "Offline_Uncorrectable" smart_"$1"_"$hdd"_"$sn".log | awk '{if($NF == 0) print "pass";else print "failed"}')
 		udma=$(grep "UDMA_CRC_Error_Count" smart_"$1"_"$hdd"_"$sn".log | awk '{if($NF == 0) print "pass";else print "failed"}')
 		icrc=$(grep -i "ICRC" smart_"$1"_"$hdd"_"$sn".log | awk '{print $3}')
-		echo "$sn $slot  $read_error $spin $reall $seek $spin_Retry_Count $tem $offline $udma $health   $icrc" >>"$1".log
-	done
+		echo -e "$sn\n\n$slot  $read_error $spin $reall $seek $spin_Retry_Count $tem $offline $udma $health   $icrc" >>"$1".log
+	done <HDD_Slot.log
 	mv smart_"$1"_* smart_"$1"
 }
 
