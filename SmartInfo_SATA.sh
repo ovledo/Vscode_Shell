@@ -20,15 +20,21 @@ function SmartInfo_log() {
 		for hdd in $(smartctl --scan | grep -i megaraid | awk '{print $3}' | awk -F "/" '{print $NF}'); do
 			sn=$(smartctl -a -x -d "$hdd" "$dev" | grep -i "serial" | awk '{print $NF}')
 			smartctl -a -x -d "$hdd" "$dev" >smart_"$1"_"$hdd"_"$sn".log
-			echo "$hdd" >>HDD_Slot.log
-			sort -u HDD_Slot.log
+			if [ "$1" = "before" ]; then
+				echo "$hdd" >>HDD_Slot.log
+			else
+				echo -e "\ncreate after_smart and Compare\n"
+			fi
 		done
 	else
 		for hdd in $(lsscsi | grep -i sd | grep -vw "$bootdisk" | awk -F "/" '{print $NF}'); do
 			sn=$(smartctl -a -x /dev/"$hdd" | grep -i "serial" | awk '{print $NF}')
 			smartctl -a -x /dev/"$hdd" >smart_"$1"_"$hdd"_"$sn".log
-			echo "$hdd" >>HDD_Slot.log
-			sort -u HDD_Slot.log
+						if [ "$1" = "before" ]; then
+				echo "$hdd" >>HDD_Slot.log
+			else
+				echo -e "\ncreate after_smart and Compare\n"
+			fi
 		done
 	fi
 
@@ -59,7 +65,6 @@ function SmartInfo_log() {
 }
 
 if [ -d "smart_before" ]; then
-	echo -e "\ncreate after_smart;and check hdd\n"
 	SmartInfo_log after
 
 	for sn in $(cat before.log | sed 1d | awk '{print $1}'); do
@@ -129,7 +134,7 @@ if [ -d "smart_before" ]; then
 	mv result.log result
 
 else
-	echo "create before_smart;and collect hdd"
+	echo -e "Collect Smart_before\n"
 	SmartInfo_log before
 
 fi
