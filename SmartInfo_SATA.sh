@@ -21,16 +21,19 @@ function SmartInfo_log() {
 	if [ "$Controller_Status" = "Success" ]; then
 		if [ "$Device_Status" = "JBOD" ]; then
 			for hdd in $(lsscsi | grep -i sd | grep -vw "$bootdisk" | awk -F "/" '{print $NF}'); do
+				sn=$(smartctl -a -x /dev/"$hdd" |grep -i "serial" |awk '{print $NF}')
 				smartctl -a -x /dev/"$hdd" >smart_"$1"_"$hdd"_"$sn".log
 			done
 		else
-			dev=$(smartctl --scan | awk '{print $1}' | uniq)
+			dev=$(smartctl --scan | grep /dev/bud | awk '{print $1}' | uniq)
 			for hdd in $(smartctl --scan | grep -i megaraid | awk '{print $3}' | awk -F "/" '{print $NF}'); do
+				sn=$(smartctl -a -x -d megaraid,192 /dev/bus/0 |grep -i "serial" |awk '{print $NF}')
 				smartctl -a -x -d "$hdd" "$dev" >smart_"$1"_"$hdd"_"$sn".log
 			done
 		fi
 	else
 		for hdd in $(lsscsi | grep -i sd | grep -vw "$bootdisk" | awk -F "/" '{print $NF}'); do
+			sn=$(smartctl -a -x /dev/"$hdd" |grep -i "serial" |awk '{print $NF}')
 			smartctl -a -x /dev/"$hdd" >smart_"$1"_"$hdd"_"$sn".log
 		done
 	fi
@@ -40,8 +43,8 @@ function SmartInfo_log() {
 	#198为"UNC"关键词
 	echo "SN       SLOT 1    3    5    7    10   194  198  199  health ICRC" >"$1".log
 
-	for slot in $hdd
-		sn=$(grep "Serial Number:" smart_"$1"_"$hdd"_"$sn".log | awk '{print $NF}')
+	for slot in $hdd;do
+		sn=$(grep "Serial Number:" smart_"$1"_"$hdd".log | awk '{print $NF}')
 		health=$(grep -i health smart_"$1"_"$hdd"_"$sn".log | awk '{if ($NF == "PASSED") print "pass";else print "failed"}')
 		read_error=$(grep "Raw_Read_Error_Rate" smart_"$1"_"$hdd"_"$sn".log | awk '{if($4 > $6) print "pass";else print "failed"}')
 		spin=$(grep "Spin_Up_Time" smart_"$1"_"$hdd"_"$sn".log | awk '{if($4 > $6) print "pass";else print "failed"}')
