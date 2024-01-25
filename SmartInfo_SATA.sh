@@ -15,18 +15,18 @@ function SmartInfo_log() {
 	#判定硬盘状态，选择抓取smart信息方式
 	#(AHCI;HBA;Raid:VD/JBOD)
 
-	Controller_Status=$(storcli64 /c0 show |grep Status |awk '{print $NF}')
-	Device_Status=$(storcli64 /c0 show |grep -i "pd list" -A 20 |grep HDD |awk '{print $3}' |sort -u)
+	Controller_Status=$(storcli64 /c0 show | grep Status | awk '{print $NF}')
+	Device_Status=$(storcli64 /c0 show | grep -i "pd list" -A 20 | grep HDD | awk '{print $3}' | sort -u)
 
 	if [ "$Controller_Status" = "Success" ]; then
-		 if [ "$Device_Status" = "JBOD" ];then
-		 	for hdd in $(lsscsi | grep -i sd | grep -vw "$bootdisk" | awk -F "/" '{print $NF}'); do
+		if [ "$Device_Status" = "JBOD" ]; then
+			for hdd in $(lsscsi | grep -i sd | grep -vw "$bootdisk" | awk -F "/" '{print $NF}'); do
 				smartctl -a -x /dev/"$hdd" >smart_"$1"_"$hdd"_"$sn".log
 			done
 		else
 			dev=$(smartctl --scan | awk '{print $1}' | uniq)
 			for hdd in $(smartctl --scan | grep -i megaraid | awk '{print $3}' | awk -F "/" '{print $NF}'); do
-				smartctl -a -d "$hdd" "$dev" >smart_"$1"_"$hdd"_"$sn".log
+				smartctl -a -x -d "$hdd" "$dev" >smart_"$1"_"$hdd"_"$sn".log
 			done
 		fi
 	else
@@ -34,30 +34,25 @@ function SmartInfo_log() {
 			smartctl -a -x /dev/"$hdd" >smart_"$1"_"$hdd"_"$sn".log
 		done
 	fi
-	
+
 	mkdir smart_"$1"
+
 	#198为"UNC"关键词
 	echo "SN       SLOT 1    3    5    7    10   194  198  199  health ICRC" >"$1".log
 
-	for hdd in $(lsscsi | grep -i sd | grep -vw "$bootdisk" | awk -F "/" '{print $NF}'); do
-		sn=$(smartctl -a /dev/$hdd | grep "Serial Number:" | awk '{print $NF}')
-		rpm=$(smartctl -i /dev/$hdd | grep "Rotation Rate:" | awk '{print $NF}')
-		if [ "$rpm" != "rpm" ]; then
-			echo " $sn is ssd"
-		else
-			smartctl -a -x /dev/"$hdd" >smart_"$1"_"$hdd"_"$sn".log
-			health=$(grep -i health smart_"$1"_"$hdd"_"$sn".log | awk '{if ($NF == "PASSED") print "pass";else print "failed"}')
-			read_error=$(grep "Raw_Read_Error_Rate" smart_"$1"_"$hdd"_"$sn".log  | awk '{if($4 > $6) print "pass";else print "failed"}')
-			spin=$(grep "Spin_Up_Time" smart_"$1"_"$hdd"_"$sn".log | awk '{if($4 > $6) print "pass";else print "failed"}')
-			reall=$(grep "Reallocated_Sector_Ct" smart_"$1"_"$hdd"_"$sn".log  | awk '{if($4 > $6) print "pass";else print "failed"}')
-			seek=$(grep "Seek_Error_Rate" smart_"$1"_"$hdd"_"$sn".log  | awk '{if($4 > $6) print "pass";else print "failed"}')
-			spin_Retry_Count=$(grep "Spin_Retry_Count" smart_"$1"_"$hdd"_"$sn".log | awk '{if($4 > $6) print "pass";else print "failed"}')
-			tem=$(grep "Temperature_Celsius" smart_"$1"_"$hdd"_"$sn".log | awk '{if($(NF-2) <= 60) print "pass";else print "failed"}')
-			offline=$(grep "Offline_Uncorrectable" smart_"$1"_"$hdd"_"$sn".log | awk '{if($NF == 0) print "pass";else print "failed"}')
-			udma=$(grep "UDMA_CRC_Error_Count" smart_"$1"_"$hdd"_"$sn".log | awk '{if($NF == 0) print "pass";else print "failed"}')
-			icrc=$(grep -i "ICRC" smart_"$1"_"$hdd"_"$sn".log |awk '{print $3}')
-			echo "$sn $hdd  $read_error $spin $reall $seek $spin_Retry_Count $tem $offline $udma $health   $icrc" >>"$1".log
-		fi
+	for slot in $hdd
+		sn=$(grep "Serial Number:" smart_"$1"_"$hdd"_"$sn".log | awk '{print $NF}')
+		health=$(grep -i health smart_"$1"_"$hdd"_"$sn".log | awk '{if ($NF == "PASSED") print "pass";else print "failed"}')
+		read_error=$(grep "Raw_Read_Error_Rate" smart_"$1"_"$hdd"_"$sn".log | awk '{if($4 > $6) print "pass";else print "failed"}')
+		spin=$(grep "Spin_Up_Time" smart_"$1"_"$hdd"_"$sn".log | awk '{if($4 > $6) print "pass";else print "failed"}')
+		reall=$(grep "Reallocated_Sector_Ct" smart_"$1"_"$hdd"_"$sn".log | awk '{if($4 > $6) print "pass";else print "failed"}')
+		seek=$(grep "Seek_Error_Rate" smart_"$1"_"$hdd"_"$sn".log | awk '{if($4 > $6) print "pass";else print "failed"}')
+		spin_Retry_Count=$(grep "Spin_Retry_Count" smart_"$1"_"$hdd"_"$sn".log | awk '{if($4 > $6) print "pass";else print "failed"}')
+		tem=$(grep "Temperature_Celsius" smart_"$1"_"$hdd"_"$sn".log | awk '{if($(NF-2) <= 60) print "pass";else print "failed"}')
+		offline=$(grep "Offline_Uncorrectable" smart_"$1"_"$hdd"_"$sn".log | awk '{if($NF == 0) print "pass";else print "failed"}')
+		udma=$(grep "UDMA_CRC_Error_Count" smart_"$1"_"$hdd"_"$sn".log | awk '{if($NF == 0) print "pass";else print "failed"}')
+		icrc=$(grep -i "ICRC" smart_"$1"_"$hdd"_"$sn".log | awk '{print $3}')
+		echo "$sn $slot  $read_error $spin $reall $seek $spin_Retry_Count $tem $offline $udma $health   $icrc" >>"$1".log
 	done
 	mv smart_"$1"_* smart_"$1"
 }
@@ -68,10 +63,10 @@ if [ -d "smart_before" ]; then
 
 	for sn in $(cat before.log | sed 1d | awk '{print $1}'); do
 
-		slot_before=$(awk '$1=="'$sn'" {print $2}' before.log )
-		icrc_before=$(awk '$1=="'$sn'" {print $NF}'  before.log )
-		UDMA_before=$(awk '$1=="'$sn'"{print $10}'  before.log  )
-		sn_after=$(awk '$1=="'$sn'" {print $1}' after.log )
+		slot_before=$(awk '$1=="'$sn'" {print $2}' before.log)
+		icrc_before=$(awk '$1=="'$sn'" {print $NF}' before.log)
+		UDMA_before=$(awk '$1=="'$sn'"{print $10}' before.log)
+		sn_after=$(awk '$1=="'$sn'" {print $1}' after.log)
 
 		if [ "$sn_after" == "$sn" ]; then
 			echo "**********$sn is exiting ,not lost,check pass***************" >>result.log
