@@ -1,7 +1,5 @@
 #!/bin/bash
 
-#查询并显示系统盘
-
 bootdisk=$(df -h | grep -i boot | awk '{print $1}' | grep -iE "/dev/sd" | sed 's/[0-9]//g' | sort -u | awk -F "/" '{print $NF}')
 if test -z "$bootdisk"; then
 	bootdisk=$(df -h | grep -i boot | awk '{print $1}' | grep -iE "/dev/nvme" | sed 's/p[0-9]//g' | sort -u | awk -F "/" '{print $NF}')
@@ -22,8 +20,6 @@ function SmartInfo_log() {
 			smartctl -a -x -d "$hdd" "$dev" >smart_"$1"_"$hdd"_"$sn".log
 			if [ "$1" = "before" ]; then
 				echo "$hdd" >>HDD_Slot.log
-			else
-				echo -e "\ncreate after_smart and Compare\n"
 			fi
 		done
 	else
@@ -32,8 +28,6 @@ function SmartInfo_log() {
 			smartctl -a -x /dev/"$hdd" >smart_"$1"_"$hdd"_"$sn".log
 						if [ "$1" = "before" ]; then
 				echo "$hdd" >>HDD_Slot.log
-			else
-				echo -e "\ncreate after_smart and Compare\n"
 			fi
 		done
 	fi
@@ -75,16 +69,16 @@ if [ -d "smart_before" ]; then
 		sn_after=$(awk '$1=="'$sn'" {print $1}' after.log)
 
 		if [ "$sn_after" == "$sn" ]; then
-			echo "**********$sn is exiting ,not lost,check pass***************" >>result.log
+			echo -e "----------$sn is exiting ,not lost,check pass----------\n" >>result.log
 
-			slot_after=$(cat after.log | awk '$1=="'$sn'" {print $2}')
+			slot_after=$(awk '$1=="'$sn'" {print $2}' after.log)
 			if [ "$slot_after" == "$slot_before" ]; then
 				echo " $sn slot ch098 eck pass.slot is $slot_after" >>result.log
 			else
 				echo " $sn slot check failed. slot is $slot_after" >>result.log
 			fi
 
-			Raw_Read_Error_Rate=$(cat after.log | awk '$1=="'$sn'" {print $3}')
+			Raw_Read_Error_Rate=$(awk '$1=="'$sn'" {print $3}' after.log)
 			echo " $sn check Raw_Read_Error_Rate is $Raw_Read_Error_Rate" >>result.log
 
 			Spin_Up_Time=$(cat after.log | awk '$1=="'$sn'" {print $4}')
