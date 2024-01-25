@@ -3,9 +3,9 @@
 bootdisk=$(df -h | grep -i boot | awk '{print $1}' | grep -iE "/dev/sd" | sed 's/[0-9]//g' | sort -u | awk -F "/" '{print $NF}')
 if test -z "$bootdisk"; then
 	bootdisk=$(df -h | grep -i boot | awk '{print $1}' | grep -iE "/dev/nvme" | sed 's/p[0-9]//g' | sort -u | awk -F "/" '{print $NF}')
-	echo -e "\n\nos disk os $bootdisk\n"
+	echo -e "\nos disk os $bootdisk\n"
 else
-	echo -e "\n\nos disk os $bootdisk\n"
+	echo -e "\nos disk os $bootdisk\n"
 fi
 
 function SmartInfo_log() {
@@ -59,6 +59,7 @@ function SmartInfo_log() {
 }
 
 if [ -d "smart_before" ]; then
+	echo "Collect Smart_after and Compare with before"
 	SmartInfo_log after
 
 	for sn in $(cat before.log | sed 1d | awk '{print $1}'); do
