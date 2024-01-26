@@ -14,7 +14,7 @@ function SmartInfo_log() {
 	Device_Status=$(storcli64 /c0 show | grep -i "pd list" -A 20 | grep HDD | awk '{print $3}' | sort -u)
 	Device_Type=$(storcli64 /c0 show | grep -i "pd list" -A 20 | grep HDD | awk '{print $NF}' | sort -u)
 	
-	if [ "$Controller_Status" = "Success" ] && [[ "$Device_Status" != "JBOD" || "$Device_Type" != "JBOD" ]]; then
+	if [ "$Controller_Status" = "Success" ] && [[ "$Device_Status" != "JBOD" && "$Device_Type" != "JBOD" ]]; then
 		dev=$(smartctl --scan | grep /dev/bus | awk '{print $1}' | uniq)
 		for hdd in $(smartctl --scan | grep -i megaraid | awk '{print $3}' | awk -F "/" '{print $NF}'); do
 			sn=$(smartctl -a -x -d "$hdd" "$dev" | grep -i "serial" | awk '{print $NF}')
