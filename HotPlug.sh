@@ -737,7 +737,7 @@ function Hotplug_Raid() {
      mkdir -p /"$Cur_Dir"/4K_RR
      cd 4K_RR || exit
      cp "$Cur_Dir"/jobfile_rr /"$Cur_Dir"/4K_RR
-     fio jobfile_rr --ioengine=libaio --randrepeat=0 --norandommap --thread --direct=1 --group_reporting --ramp_time=60 --runtime=300 --time_based --numjobs=1 --iodepth=64 --rw=randwrite --bs=4k --output=4K_randW.log --log_avg_msec=1000 --write_iops_log=4K_randW_iops.log --write_lat_log=4K_randW_lat.log &
+     fio jobfile_rr --ioengine=libaio --randrepeat=0 --norandommap --thread --direct=1 --group_reporting --ramp_time=60 --runtime=300 --time_based --numjobs=1 --iodepth=64 --rw=randread --bs=4k --output=4K_randW.log --log_avg_msec=1000 --write_iops_log=4K_randW_iops.log --write_lat_log=4K_randW_lat.log &
      sleep 450s
      cd ..
 
