@@ -857,6 +857,64 @@ function Hotplug_Raid() {
      sleep 300s
      echo -e "\nFinish Rebuild,Collect Log\n"
 
+
+     mkdir -p /"$Dir_Pre"/Raid/Second
+     cd /"$Dir_Pre"/Raid/Second ||exit
+
+     OS_disk=$(df -h | grep boot | awk '{print $1}' | awk -F/ '{print $NF}' | sed -e 's/[0-9]*//g' | sort -u)
+     ls /sys/block/ | grep sd | grep -v "$OS_disk" >block
+     num=$(wc -l block)
+     echo -e "\nTotal $num Device in the system\n"
+
+     while read line; do
+          echo "[${line}_seq_write_1M]" >>jobfile_sw
+          echo "filename=/dev/$line" >>jobfile_sw
+
+          echo "[${line}_seq_read_1M]" >>jobfile_sr
+          echo "filename=/dev/${line}" >>jobfile_sr
+
+          echo "[${line}_randwrite_4k]" >>jobfile_rw
+          echo "filename=/dev/${line}" >>jobfile_rw
+
+          echo "[${line}_randread_4k]" >>jobfile_rr
+          echo "filename=/dev/${line}" >>jobfile_rr
+     done <block
+
+     echo -e "\n----------Do Sequential Write----------\n"
+     mkdir -p /"$Dir_Pre"/Raid/Second/1M_SW
+     cd 1M_SW || exit
+     cp "$Cur_Dir"/jobfile_sw /"$Dir_Pre"/Raid/Second/1M_SW
+     fio jobfile_sw --ioengine=libaio --randrepeat=0 --norandommap --thread --direct=1 --group_reporting --ramp_time=60 --runtime=300 --time_based --numjobs=1 --iodepth=32 --rw=write --bs=1M --output=1M_seqW.log --log_avg_msec=1000 --write_iops_log=1M_seqW_iops.log --write_lat_log=1M_seqW_lat.log &
+     sleep 450s
+     cd ..
+
+     echo -e "\n----------Do Sequential Read----------\n"
+     mkdir -p /"$Dir_Pre"/Raid/Second/1M_SR
+     cd 1M_SR || exit
+     cp "$Cur_Dir"/jobfile_sr /"$Dir_Pre"/Raid/Second/1M_SR
+     fio jobfile_sr --ioengine=libaio --randrepeat=0 --norandommap --thread --direct=1 --group_reporting --ramp_time=60 --runtime=300 --time_based --numjobs=1 --iodepth=32 --rw=read --bs=1M --output=1M_seqR.log --log_avg_msec=1000 --write_iops_log=1M_seqR_iops.log --write_lat_log=1M_seqR_lat.log &
+     sleep 450s
+     cd ..
+
+     echo -e "\n----------Do Random Write----------\n"
+     mkdir -p /"$Dir_Pre"/Raid/Second/4K_RW
+     cd 4K_RW || exit
+     cp "$Cur_Dir"/jobfile_rw /"$Dir_Pre"/Raid/Second/4K_RW
+     fio jobfile_rw --ioengine=libaio --randrepeat=0 --norandommap --thread --direct=1 --group_reporting --ramp_time=60 --runtime=300 --time_based --numjobs=1 --iodepth=64 --rw=randwrite --bs=4k --output=4K_randW.log --log_avg_msec=1000 --write_iops_log=4K_randW_iops.log --write_lat_log=4K_randW_lat.log &
+     sleep 450s
+     cd ..
+
+     echo -e "\n----------Do Random Read----------\n"
+     mkdir -p /"$Dir_Pre"/Raid/Second/4K_RR
+     cd 4K_RR || exit
+     cp "$Cur_Dir"/jobfile_rr /"$Dir_Pre"/Raid/Second/4K_RR
+     fio jobfile_rr --ioengine=libaio --randrepeat=0 --norandommap --thread --direct=1 --group_reporting --ramp_time=60 --runtime=300 --time_based --numjobs=1 --iodepth=64 --rw=randread --bs=4k --output=4K_randW.log --log_avg_msec=1000 --write_iops_log=4K_randW_iops.log --write_lat_log=4K_randW_lat.log &
+     sleep 450s
+     cd ..
+
+     echo -e "\nThe FIO performance data collection is complete. The Devices are ready to be inserted or removed\n"
+     sleep 30s
+
      function SmartInfo_after_Raid() {
 
           #根据在SmartInfo_before时查询的Port来判定是SATA/SAS盘收集信息
