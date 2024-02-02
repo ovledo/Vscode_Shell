@@ -253,7 +253,7 @@ else
     SmartInfo_SAS
 fi
 
-if [ -d "smart_before" ]; then
+if [ -d "smart_after" ]; then
     grep -i failed result.log >failed.log
     mkdir result
     mv before.log result
