@@ -9,6 +9,272 @@ else
      echo "os disk is $bootdisk"
 fi
 
+####----------调用SmartInfo----------###
+
+function SmartInfo() {
+     function SmartInfo_SATA() {
+
+          function SmartInfo_log() {
+
+               if [ "$Controller_Status" = "Success" ] && [[ "$Device_Status" != "JBOD" && "$Device_Type" != "JBOD" ]]; then
+                    dev=$(smartctl --scan | grep /dev/bus | awk '{print $1}' | uniq)
+                    for hdd in $(smartctl --scan | grep -i megaraid | awk '{print $3}' | awk -F "/" '{print $NF}'); do
+                         sn=$(smartctl -a -x -d "$hdd" "$dev" | grep -i "serial" | awk '{print $NF}')
+                         smartctl -a -x -d "$hdd" "$dev" >smart_"$1"_"$hdd"_"$sn".log
+                         if [ "$1" = "before" ]; then
+                              echo "$hdd" >>HDD_Slot.log
+                         fi
+                    done
+               else
+                    for hdd in $(lsscsi | grep -i sd | grep -vw "$bootdisk" | awk -F "/" '{print $NF}'); do
+                         sn=$(smartctl -a -x /dev/"$hdd" | grep -i "serial" | awk '{print $NF}')
+                         smartctl -a -x /dev/"$hdd" >smart_"$1"_"$hdd"_"$sn".log
+                         if [ "$1" = "before" ]; then
+                              echo "$hdd" >>HDD_Slot.log
+                         fi
+                    done
+               fi
+
+               mkdir smart_"$1"
+
+               #198为"UNC"关键词
+               echo "SN  SLOT  1  3  5  7  10  194  198  199  health ICRC" >"$1".log
+
+               while read hdd; do
+                    sn=$(grep "Serial Number:" smart_"$1"_"$hdd"_*.log | awk '{print $NF}')
+                    health=$(grep -i health smart_"$1"_"$hdd"_"$sn".log | awk '{if ($NF == "PASSED") print "pass";else print "failed"}')
+                    read_error=$(grep "Raw_Read_Error_Rate" smart_"$1"_"$hdd"_"$sn".log | awk '{if($4 > $6) print "pass";else print "failed"}')
+                    spin=$(grep "Spin_Up_Time" smart_"$1"_"$hdd"_"$sn".log | awk '{if($4 > $6) print "pass";else print "failed"}')
+                    reall=$(grep "Reallocated_Sector_Ct" smart_"$1"_"$hdd"_"$sn".log | awk '{if($4 > $6) print "pass";else print "failed"}')
+                    seek=$(grep "Seek_Error_Rate" smart_"$1"_"$hdd"_"$sn".log | awk '{if($4 > $6) print "pass";else print "failed"}')
+                    spin_Retry_Count=$(grep "Spin_Retry_Count" smart_"$1"_"$hdd"_"$sn".log | awk '{if($4 > $6) print "pass";else print "failed"}')
+                    tem=$(grep "Temperature_Celsius" smart_"$1"_"$hdd"_"$sn".log | awk '{if($(NF-2) <= 60) print "pass";else print "failed"}')
+                    offline=$(grep "Offline_Uncorrectable" smart_"$1"_"$hdd"_"$sn".log | awk '{if($NF == 0) print "pass";else print "failed"}')
+                    udma=$(grep "UDMA_CRC_Error_Count" smart_"$1"_"$hdd"_"$sn".log | awk '{if($NF == 0) print "pass";else print "failed"}')
+                    icrc=$(grep -i "ICRC" smart_"$1"_"$hdd"_"$sn".log | awk '{print $3}')
+                    echo "$sn $hdd  $read_error $spin $reall $seek $spin_Retry_Count $tem $offline $udma $health   $icrc" >>"$1".log
+               done <HDD_Slot.log
+
+               column -t "$1".log >transit.log
+               cat transit.log >"$1".log
+
+               mv smart_"$1"_* smart_"$1"
+          }
+
+          if [ -d "smart_before" ]; then
+               echo "Collect Smart_after and Compare with before"
+               SmartInfo_log after
+
+               for sn in $(cat before.log | sed 1d | awk '{print $1}'); do
+
+                    slot_before=$(awk '$1=="'$sn'" {print $2}' before.log)
+                    icrc_before=$(awk '$1=="'$sn'" {print $NF}' before.log)
+                    UDMA_before=$(awk '$1=="'$sn'"{print $10}' before.log)
+                    sn_after=$(awk '$1=="'$sn'" {print $1}' after.log)
+
+                    if [ "$sn_after" == "$sn" ]; then
+                         echo -e "\n----------$sn is exiting ,not lost,check pass----------\n" >>result.log
+
+                         slot_after=$(awk '$1=="'$sn'" {print $2}' after.log)
+                         if [ "$slot_after" == "$slot_before" ]; then
+                              echo " $sn slot ch098 eck pass.slot is $slot_after" >>result.log
+                         else
+                              echo " $sn slot check failed. slot is $slot_after" >>result.log
+                         fi
+
+                         Raw_Read_Error_Rate=$(awk '$1=="'$sn'" {print $3}' after.log)
+                         echo " $sn check Raw_Read_Error_Rate is $Raw_Read_Error_Rate" >>result.log
+
+                         Spin_Up_Time=$(cat after.log | awk '$1=="'$sn'" {print $4}')
+                         echo " $sn check Spin_Up_Time is $Spin_Up_Time" >>result.log
+
+                         Reallocated_Sector_Ct=$(cat after.log | awk '$1=="'$sn'" {print $5}')
+                         echo " $sn check Reallocated_Sector_Ct is $Reallocated_Sector_Ct" >>result.log
+
+                         Seek_Error_Rate=$(cat after.log | awk '$1=="'$sn'" {print $6}')
+                         echo " $sn check Seek_Error_Rate is $Seek_Error_Rate" >>result.log
+
+                         Spin_Retry_Count=$(cat after.log | awk '$1=="'$sn'" {print $7}')
+                         echo " $sn check Spin_Retry_Count is $Spin_Retry_Count" >>result.log
+
+                         Temperature_Celsius=$(cat after.log | awk '$1=="'$sn'" {print $8}')
+                         echo " $sn check Temperature_Celsius is $Temperature_Celsius" >>result.log
+
+                         Offline_Uncorrectable=$(cat after.log | awk '$1=="'$sn'" {print $9}')
+                         echo " $sn check Offline_Uncorrectable is $Offline_Uncorrectable" >>result.log
+
+                         health=$(cat after.log | awk '$1=="'$sn'" {print $11}')
+                         echo " $sn  check health is $health" >>result.log
+
+                         icrc_after=$(cat after.log | awk '$1=="'$sn'" {print $NF}')
+                         if [ "$icrc_after" == $icrc_before ]; then
+                              echo " $sn ICRC check pass. ICRC IS $icrc_after" >>result.log
+                         else
+                              echo " $sn ICRC check failed. ICRC is $icrc_after" >>result.log
+                         fi
+                         UDMA_after=$(cat after.log | awk '$1=="'$sn'" {print $10}')
+                         if [ "$UDMA_after" == "$UDMA_before" ]; then
+                              echo " $sn UDMA check pass. UDMA_before is $UDMA_before UDMA_after is $UDMA_after" >>result.log
+                         else
+                              echo " $sn UDMA check failed. UDMA_before is $UDMA_before UDMA_after is $UDMA_after" >>result.log
+                         fi
+                    else
+                         echo " $sn is lost,check failed" >>result.log
+                    fi
+
+               done
+
+          else
+               echo -e "Collect Smart_before\n"
+               SmartInfo_log before
+
+          fi
+
+     }
+
+     function SmartInfo_SAS() {
+
+          function SmartInfo_log() {
+
+               if [ "$Controller_Status" = "Success" ] && [[ "$Device_Status" != "JBOD" && "$Device_Type" != "JBOD" ]]; then
+                    dev=$(smartctl --scan | grep /dev/bus | awk '{print $1}' | uniq)
+                    for hdd in $(smartctl --scan | grep -i megaraid | awk '{print $3}' | awk -F "/" '{print $NF}'); do
+                         sn=$(smartctl -a -x -d "$hdd" "$dev" | grep -i "serial" | awk '{print $NF}')
+                         smartctl -a -x -d "$hdd" "$dev" >smart_"$1"_"$hdd"_"$sn".log
+                         if [ "$1" = "before" ]; then
+                              echo "$hdd" >>HDD_Slot.log
+                         fi
+                    done
+               else
+                    for hdd in $(lsscsi | grep -i sd | grep -vw "$bootdisk" | awk -F "/" '{print $NF}'); do
+                         sn=$(smartctl -a -x /dev/"$hdd" | grep -i "serial" | awk '{print $NF}')
+                         smartctl -a -x /dev/"$hdd" >smart_"$1"_"$hdd"_"$sn".log
+                         if [ "$1" = "before" ]; then
+                              echo "$hdd" >>HDD_Slot.log
+                         fi
+                    done
+               fi
+
+               mkdir smart_"$1"
+
+               echo -e "SN  SLOT Temp Read_error Write_error Elements Healthy DWORD1  \tDWORD2  " >"$1".log
+
+               while read hdd; do
+                    smartctl -a -x /dev/"$hdd" >"${1}"_"${hdd}"_"${sn}".log
+                    mv "${1}"_"${hdd}"_"${sn}".log smart_"$1"
+                    tem=$(grep "Current Drive Temperature" smart_"$1"_"$hdd"_"$sn".log | awk '{if($(NF-1) <= 60) print "pass";else print "failed"}')
+                    Readerror=$(grep "Error counter log:" -A 10 smart_"$1"_"$hdd"_"$sn".log | grep "read:" | awk '{if($NF <= 0) print "pass";else print "failed"}')
+                    Writeerror=$(grep "Error counter log:" -A 10 smart_"$1"_"$hdd"_"$sn".log | grep "write:" | awk '{if($NF == 0) print "pass";else print "failed"}')
+                    Elements=$(grep "Elements in grown defect list:" smart_"$1"_"$hdd"_"$sn".log | awk '{if ($NF == 0) print "pass";else print "failed"}')
+                    Healthy=$(grep "SMART Health Status:" smart_"$1"_"$hdd"_"$sn".log | awk '{if ($NF == "OK") print "pass";else print "failed"}')
+                    DWORD1=$(grep "Invalid DWORD count" smart_"$1"_"$hdd"_"$sn".log | sed 2,2d | awk '{print $NF}')
+                    DWORD2=$(grep "Invalid DWORD count" smart_"$1"_"$hdd"_"$sn".log | sed 1,1d | awk '{print $NF}')
+                    echo -e "$sn   $hdd  $tem $Readerror       $Writeerror        $Elements     $Healthy    $DWORD1  \t\t\t$DWORD2  " >>"$1".log
+
+               done <HDD_Slot.log
+
+               column -t "$1".log >transit.log
+               cat transit.log >"$1".log
+
+               mv smart_"$1"_* smart_"$1"
+          }
+
+          if [ -d "smart_before" ]; then
+               echo "create after_smart;and check hdd"
+               SmartInfo_log after
+
+               for sn in $(awk '{print $1}' before.log | sed 1d); do
+                    slot_before=$(awk '$1=="'$sn'" {print $2}' before.log)
+                    DWORD1_before=$(awk '$1=="'$sn'" {print $(NF-1)}' before.log)
+                    DWORD2_before=$(awk '$1=="'$sn'"  {print  $NF}' before.log)
+                    sn_after=$(awk '$1=="'$sn'" {print $1}' after.log)
+
+                    if [ "$sn_after" == "$sn" ]; then
+                         echo -e "\n----------$sn is exiting ,not lost,check pass----------\n" >>result.log
+
+                         slot_after=$(awk '$1=="'$sn'" {print $2}' after.log)
+                         if [ "$slot_after" == "$slot_before" ]; then
+                              echo " $sn slot check pass.slot is $slot_after" >>result.log
+                         else
+                              echo " $sn slot check failed. slot is $slot_after" >>result.log
+                         fi
+
+                         Current_Drive_Temp=$(awk '$1=="'$sn'" {print $3}' after.log)
+                         echo " $sn check Current_Drive_Temp is $Current_Drive_Temp" >>result.log
+
+                         Read_Total_Uncorrected_Errors=$(awk '$1== "'$sn'" {print $4}' after.log)
+                         echo " $sn check Read_Total_Uncorrected_Errors is $Read_Total_Uncorrected_Errors" >>result.log
+
+                         Write_Total_Uncorrected_Errors=$(awk '$1=="'$sn'" {print $5}' after.log)
+                         echo " $sn check Write_Total_Uncorrected_Errors $Write_Total_Uncorrected_Errors" >>result.log
+
+                         Elements_in_grown_defect_list=$(awk '$1=="'$sn'" {print $6}' after.log)
+                         echo " $sn check Elements_in_grown_defect_list is $Elements_in_grown_defect_list" >>result.log
+
+                         health=$(awk '$1=="'$sn'" {print $7}' after.log)
+                         echo " $sn  check health is $health" >>result.log
+
+                         Invalid_DWORD_Count1=$(awk '$1=="'$sn'" {print $8}' after.log)
+                         echo " $sn check Invalid_DWORD_Count1_before is $Invalid_DWORD_Count1" >>result.log
+
+                         Invalid_DWORD_Count2=$(awk '$1=="'$sn'" {print $9}' after.log)
+                         echo " $sn check Invalid_DWORD_Count2_before is $Invalid_DWORD_Count2" >>result.log
+
+                         DWORD1_after=$(awk '$1=="'$sn'" {print $(NF-1)}' after.log)
+                         DWORD2_after=$(awk '$1=="'$sn'" {print $(NF)}' after.log)
+                         if [ "$DWORD1_after" -lt "$((DWORD1_before + 200))" ]; then
+                              echo " $sn Invalid_DWORD_Count1 check pass. Invalid_DWORD_Count1_after IS $DWORD1_after" >>result.log
+                         else
+                              echo " $sn Invalid_DWORD_Count1 check failed. Invalid_DWORD_Count1_before is $DWORD1_before; Invalid_DWORD_Count1_after is  IS $DWORD1_after" >>result.log
+                         fi
+                         if [ "$DWORD2_after" -lt "$((DWORD2_before + 200))" ]; then
+                              echo " $sn Invalid_DWORD_Count2 check pass. Invalid_DWORD_Count2_after IS $DWORD2_after" >>result.log
+                         else
+                              echo " $sn Invalid_DWORD_Count2 check failed. DWORD2_before is $DWORD2_before; Invalid_DWORD_Count2_after is  IS $DWORD2_after" >>result.log
+                         fi
+
+                    else
+                         echo " $sn is lost,check failed" >>result.log
+                    fi
+               done
+
+          else
+               echo "create before_smart;and collect hdd"
+               SmartInfo_log before
+
+          fi
+     }
+
+     Raid_Status=$(storcli64 /c0 show | grep -i "PD List" -A 20 | grep EID:Slt -A 15 | grep -v '^-*$' | sed '1d' | awk '{for(i=1;i<NF;i++) {if ( $i == "SATA" || $i == "SAS" ) print $i}}' | uniq)
+     AHCI_Status=$(wdckit s | grep Port -A 10 | awk '{print $3}' | grep -v '^-*$' | sed 1d | uniq)
+     Controller_Status=$(storcli64 /c0 show | grep Status | awk '{print $NF}')
+     Device_Status=$(storcli64 /c0 show | grep -i "pd list" -A 20 | grep HDD | awk '{print $3}' | sort -u)
+     Device_Type=$(storcli64 /c0 show | grep -i "pd list" -A 20 | grep HDD | awk '{print $NF}' | sort -u)
+
+     bootdisk=$(df -h | grep -i boot | awk '{print $1}' | grep -iE "/dev/sd" | sed 's/[0-9]//g' | sort -u | awk -F "/" '{print $NF}')
+     if test -z "$bootdisk"; then
+          bootdisk=$(df -h | grep -i boot | awk '{print $1}' | grep -iE "/dev/nvme" | sed 's/p[0-9]//g' | sort -u | awk -F "/" '{print $NF}')
+          echo -e "\nos disk os $bootdisk\n"
+     else
+          echo -e "\nos disk os $bootdisk\n"
+     fi
+
+     if [ "$Raid_Status" = "SATA" ] || [ "$AHCI_Status" = "SATA" ]; then
+          SmartInfo_SATA
+     else
+          SmartInfo_SAS
+     fi
+
+     if [ -d "smart_after" ]; then
+          grep -i failed result.log >failed.log
+          mkdir result
+          mv before.log result
+          mv after.log result
+          mv failed.log result
+          mv result.log result
+     fi
+}
+
 #开始HotPlug(mount Device),并进行检查;(此时硬盘状态已为JBOD并且所有分区及内容全部删除)
 #wipefs -af /dev/sd*
 
@@ -37,59 +303,9 @@ function Hot_Swap() {
      sleep 5s
 
      #在整个热插拔测试前，做smart信息收集，在带IO的结束后进行第二次收集，目录在Hot_Swap下
-     function SmartInfo_before_Swap() {
-          #判定是SATA盘还是SAS盘，收集不同的数据
-          echo -e "\n----------Create folder to collect smart_before----------\n"
 
-          function Smartbefore_SAS() {
-               mkdir smart_before
-               echo -e "SN         SLOT Temp Read_error Write_error Elements Healthy DWORD1  \tDWORD2  " >before.log
-               for hdd in $(lsscsi | grep -i sd | grep -vw "$bootdisk" | awk -F "/" '{print $NF}'); do
-                    sn=$(smartctl -a -x /dev/"${hdd}" | grep -i "Serial Number:" | awk '{print $NF}')
-                    smartctl -a -x /dev/"$hdd" >smart_before_"$sn".log
-                    tem=$(grep "Current Drive Temperature" smart_before_"$sn".log | awk '{if($(NF-1) <= 60) print "pass";else print "failed"}')
-                    Readerror=$(grep "Error counter log:" -A 10 smart_before_"$sn".log | grep "read:" | awk '{if($NF <= 0) print "pass";else print "failed"}')
-                    Writeerror=$(grep "Error counter log:" -A 10 smart_before_"$sn".log | grep "write:" | awk '{if($NF == 0) print "pass";else print "failed"}')
-                    Elements=$(grep "Elements in grown defect list:" smart_before_"$sn".log | awk '{if ($NF == 0) print "pass";else print "failed"}')
-                    Healthy=$(grep "SMART Health Status:" smart_before_"$sn".log | awk '{if ($NF == "OK") print "pass";else print "failed"}')
-                    DWORD1=$(grep "Invalid DWORD count" smart_before_"$sn".log | sed 2,2d | awk '{print $NF}')
-                    DWORD2=$(grep "Invalid DWORD count" smart_before_"$sn".log | sed 1,1d | awk '{print $NF}')
-                    echo -e "$sn   $hdd  $tem $Readerror       $Writeerror        $Elements     $Healthy    $DWORD1  \t\t\t$DWORD2  " >>before.log
-               done
-          }
-
-          function Smartbefore_SATA() {
-               mkdir smart_before
-               echo -e "SN       SLOT 1    3    5    7    10   194  198  199  health ICRC" >before.log
-               for hdd in $(wdckit s | grep -i sd | grep -vw "$bootdisk" | awk '{print $2}' | awk -F "/" '{print $3}'); do
-                    sn=$(smartctl -a -x /dev/"$hdd" | grep -i "Serial Number:" | awk '{print $NF}')
-                    smartctl -a -x /dev/"$hdd" >smart_before_"$sn".log
-                    health=$(cat smart_before_"$sn"*.log | grep -i health | awk '{if ($NF == "PASSED") print "pass";else print "failed"}')
-                    icrc=$(cat smart_before_"$sn"*.log | grep "ICRC" | awk '{print $3}')
-                    read_error=$(cat smart_before_"$sn"*.log | grep "Raw_Read_Error_Rate" | awk '{if($4 > $6) print "pass";else print "failed"}')
-                    spin=$(cat smart_before_"$sn"*.log | grep "Spin_Up_Time" | awk '{if($4 > $6) print "pass";else print "failed"}')
-                    reall=$(cat smart_before_"$sn"*.log | grep "Reallocated_Sector_Ct" | awk '{if($4 > $6) print "pass";else print "failed"}')
-                    seek=$(cat smart_before_"$sn"*.log | grep "Seek_Error_Rate" | awk '{if($4 > $6) print "pass";else print "failed"}')
-                    spin_Retry_Count=$(cat smart_before_"$sn"*.log | grep "Spin_Retry_Count" | awk '{if($4 > $6) print "pass";else print "failed"}')
-                    tem=$(cat smart_before_"$sn"*.log | grep "Temperature_Celsius" | awk '{if($(NF-2) <= 60) print "pass";else print "failed"}')
-                    offline=$(cat smart_before_"$sn"*.log | grep "Offline_Uncorrectable" | awk '{if($NF == 0) print "pass";else print "failed"}')
-                    udma=$(cat smart_before_"$sn"*.log | grep "UDMA_CRC_Error_Count" | awk '{if($NF == 0) print "pass";else print "failed"}')
-                    echo "$sn $hdd  $read_error $spin $reall $seek $spin_Retry_Count $tem $offline $udma $health   $icrc" >>before.log
-               done
-          }
-
-          Port=$(wdckit s | grep -i "tb" | awk '{print $3}')
-          if [ "$Port" = "SAS" ]; then
-               Smartbefore_SAS
-               echo -e "\nCollect SAS Smart_Info\n"
-          else
-               Smartbefore_SATA
-               echo -e "\nCollect SATA Smart_Info\n"
-          fi
-
-     }
-
-     SmartInfo_before_Swap
+     echo -e "\n----------Create folder to collect smart_before----------\n"
+     SmartInfo
      sleep 5s
      echo -e "\n----------Finish SmartInfo_before Collect----------\n"
 
@@ -149,7 +365,7 @@ function Hot_Swap() {
                cd /mnt || exit
                echo -e "\nDo md5 check\n"
                sleep 5s
-               md5sum test >test.md5 
+               md5sum test >test.md5
                sleep 5s
 
                cd /"$Dir_Pre"/Hot_Swap/NoneIO || exit
@@ -270,8 +486,8 @@ function Hot_Swap() {
 
                fio jobfile_rw --ioengine=libaio --randrepeat=0 --norandommap --thread --direct=1 --group_reporting --ramp_time=60 --runtime=300 --time_based --numjobs=4 --iodepth=64 --rw=randwrite --bs=4k --log_avg_msec=1000 >4k_RW.log &
 
-               fio --ioengine=libaio --norandommap --thread --direct=1 --name=test --ramp_time=60 --runtime=300 --time_based --numjobs=4 --iodepth=64 --filename=/dev/"$Test_Device" --rw=randwrite --bs=4k>4k_"$Test_Device".log  &
-               
+               fio --ioengine=libaio --norandommap --thread --direct=1 --name=test --ramp_time=60 --runtime=300 --time_based --numjobs=4 --iodepth=64 --filename=/dev/"$Test_Device" --rw=randwrite --bs=4k >4k_"$Test_Device".log &
+
                sleep 60s
                iostat -x 5 >iosta_all.log &
                sleep 60s
@@ -355,181 +571,9 @@ function Hot_Swap() {
      Swap_IO
 
      ###-----------完成热插拔以后，收集Smart和系统log----------###
-     function SmartInfo_after_Swap() {
-          #判定是SATA盘还是SAS盘，收集不同的数据
-          echo -e "\n----------Create folder to collect smart_before----------\n"
-
-          function Smartafter_SAS() {
-               mkdir smart_after
-               echo -e "SN         SLOT Temp Read_error Write_error Elements Healthy DWORD1  \tDWORD2  " >after.log
-               for sn in $(wdckit s | grep "SAS" | awk '{print $8}'); do
-                    hdd=$(wdckit s | grep "$sn" | awk '{print $2}' | awk -F '/' '{print $NF}')
-                    smartctl -a -x /dev/"$hdd" >smart_after_"$sn".log
-                    tem=$(grep "Current Drive Temperature" smart_after_"$sn".log | awk '{if($(NF-1) <= 60) print "pass";else print "failed"}')
-                    Readerror=$(grep "Error counter log:" -A 10 smart_after_"$sn".log | grep "read:" | awk '{if($NF <= 0) print "pass";else print "failed"}')
-                    Writeerror=$(grep "Error counter log:" -A 10 smart_after_"$sn".log | grep "write:" | awk '{if($NF == 0) print "pass";else print "failed"}')
-                    Elements=$(grep "Elements in grown defect list:" smart_after_"$sn".log | awk '{if ($NF == 0) print "pass";else print "failed"}')
-                    Healthy=$(grep "SMART Health Status:" smart_after_"$sn".log | awk '{if ($NF == "OK") print "pass";else print "failed"}')
-                    DWORD1=$(grep "Invalid DWORD count" smart_after_"${sn}".log | sed 2,2d | awk '{print $NF}')
-                    DWORD2=$(grep "Invalid DWORD count" smart_after_"${sn}".log | sed 1,1d | awk '{print $NF}')
-                    echo -e "$sn   $hdd  $tem $Readerror       $Writeerror        $Elements     $Healthy    $DWORD1  \t\t\t$DWORD2  " >>after.log
-               done
-
-               for sn in $(awk '{print $1}' before.log | sed 1d); do
-                    slot_before=$(awk '$1=="'$sn'" {print $2}' before.log)
-                    DWORD1_before=$(awk '$1=="'$sn'" {print $(NF-1)}' before.log)
-                    DWORD2_before=$(awk '$1=="'$sn'"  {print  $NF}' before.log)
-                    sn_after=$(awk '$1=="'$sn'" {print $1}' after.log)
-
-                    if [ "$sn_after" == "$sn" ]; then
-                         echo "**********$sn is exiting ,not lost,check pass***************" >>result.log
-
-                         slot_after=$(awk '$1=="'$sn'" {print $2}' after.log)
-                         if [ "$slot_after" == "$slot_before" ]; then
-                              echo " $sn slot check pass.slot is $slot_after" >>result.log
-                         else
-                              echo " $sn slot check failed. slot is $slot_after" >>result.log
-                         fi
-
-                         Current_Drive_Temp=$(awk '$1=="'$sn'" {print $3}' after.log)
-                         echo " $sn check Current_Drive_Temp is $Current_Drive_Temp" >>result.log
-
-                         Read_Total_Uncorrected_Errors=$(awk '$1== "'$sn'" {print $4}' after.log)
-                         echo " $sn check Read_Total_Uncorrected_Errors is $Read_Total_Uncorrected_Errors" >>result.log
-
-                         Write_Total_Uncorrected_Errors=$(awk '$1=="'$sn'" {print $5}' after.log)
-                         echo " $sn check Write_Total_Uncorrected_Errors $Write_Total_Uncorrected_Errors" >>result.log
-
-                         Elements_in_grown_defect_list=$(awk '$1=="'$sn'" {print $6}' after.log)
-                         echo " $sn check Elements_in_grown_defect_list is $Elements_in_grown_defect_list" >>result.log
-
-                         health=$(awk '$1=="'$sn'" {print $7}' after.log)
-                         echo " $sn  check health is $health" >>result.log
-
-                         Invalid_DWORD_Count1=$(awk '$1=="'$sn'" {print $8}' after.log)
-                         echo " $sn check Invalid_DWORD_Count1_before is $Invalid_DWORD_Count1" >>result.log
-
-                         Invalid_DWORD_Count2=$(awk '$1=="'$sn'" {print $9}' after.log)
-                         echo " $sn check Invalid_DWORD_Count2_before is $Invalid_DWORD_Count2" >>result.log
-
-                         DWORD1_after=$(awk '$1=="'$sn'" {print $(NF-1)}' after.log)
-                         DWORD2_after=$(awk '$1=="'$sn'" {print $(NF)}' after.log)
-                         if [ "$DWORD1_after" -lt "$((DWORD1_before + 200))" ]; then
-                              echo " $sn Invalid_DWORD_Count1 check pass. Invalid_DWORD_Count1_after IS $DWORD1_after" >>result.log
-                         else
-                              echo " $sn Invalid_DWORD_Count1 check failed. Invalid_DWORD_Count1_before is $DWORD1_before; Invalid_DWORD_Count1_after is  IS $DWORD1_after" >>result.log
-                         fi
-                         if [ "$DWORD2_after" -lt "$((DWORD2_before + 200))" ]; then
-                              echo " $sn Invalid_DWORD_Count2 check pass. Invalid_DWORD_Count2_after IS $DWORD2_after" >>result.log
-                         else
-                              echo " $sn Invalid_DWORD_Count2 check failed. DWORD2_before is $DWORD2_before; Invalid_DWORD_Count2_after is  IS $DWORD2_after" >>result.log
-                         fi
-
-                    else
-                         echo " $sn is lost,check failed" >>result.log
-                    fi
-               done
-          }
-
-          function Smartafter_SATA() {
-               mkdir smart_after
-               echo -e "SN       SLOT 1    3    5    7    10   194  198  199  health ICRC" >after.log
-
-               for hdd in $(wdckit s | grep -i sd | grep -vw "$bootdisk" | awk '{print $2}' | awk -F "/" '{print $3}'); do
-                    sn=$(smartctl -a -x /dev/"$hdd" | grep -i "Serial Number:" | awk '{print $NF}')
-                    smartctl -a -x /dev/"$hdd" >smart_after_"$sn".log
-                    health=$(grep -i "health" smart_after_"$sn".log | awk '{if ($NF == "PASSED") print "pass";else print "failed"}')
-                    icrc=$(grep "ICRC" smart_after_"$sn".log | awk '{print $3}')
-                    read_error=$(grep "Raw_Read_Error_Rate" smart_after_"$sn".log | awk '{if($4 > $6) print "pass";else print "failed"}')
-                    spin=$(grep "Spin_Up_Time" smart_after_"$sn".log | awk '{if($4 > $6) print "pass";else print "failed"}')
-                    reall=$(grep "Reallocated_Sector_Ct" smart_after_"$sn".log | awk '{if($4 > $6) print "pass";else print "failed"}')
-                    seek=$(grep "Seek_Error_Rate" smart_after_"$sn".log | awk '{if($4 > $6) print "pass";else print "failed"}')
-                    spin_Retry_Count=$(grep "Spin_Retry_Count" smart_after_"$sn".log | awk '{if($4 > $6) print "pass";else print "failed"}')
-                    tem=$(grep "Temperature_Celsius" smart_after_"$sn".log | awk '{if($(NF-2) <= 60) print "pass";else print "failed"}')
-                    offline=$(grep "Offline_Uncorrectable" smart_after_"$sn".log | awk '{if($NF == 0) print "pass";else print "failed"}')
-                    udma=$(grep "UDMA_CRC_Error_Count" smart_after_"$sn".log | awk '{if($NF == 0) print "pass";else print "failed"}')
-
-                    echo "$sn $hdd  $read_error $spin $reall $seek $spin_Retry_Count $tem $offline $udma $health   $icrc" >>after.log
-               done
-
-               echo -e "Smart_after collection completed,then compare with smart_before.\n "
-
-               for sn in $(cat before.log | sed 1d | awk '{print $1}'); do
-                    slot_before=$(cat before.log | awk '$1=="'$sn'" {print $2}')
-                    icrc_before=$(cat before.log | awk '$1=="'$sn'" {print $NF}')
-                    UDMA_before=$(cat before.log | awk '$1=="'$sn'"{print $10}')
-                    sn_after=$(cat after.log | awk '$1=="'$sn'" {print $1}')
-
-                    if [ "$sn_after" == "$sn" ]; then
-                         echo "**********$sn is exiting ,not lost,check pass***************" >>result.log
-
-                         slot_after=$(cat after.log | awk '$1=="'$sn'" {print $2}')
-                         if [ "$slot_after" == $slot_before ]; then
-                              echo " $sn slot ch098 eck pass.slot is $slot_after" >>result.log
-                         else
-                              echo " $sn slot check failed. slot is $slot_after" >>result.log
-                         fi
-
-                         # echo "check 1 3 5 7 10 194 198 199 health"
-                         Raw_Read_Error_Rate=$(cat after.log | awk '$1=="'$sn'" {print $3}')
-                         echo " $sn check Raw_Read_Error_Rate is $Raw_Read_Error_Rate" >>result.log
-
-                         Spin_Up_Time=$(cat after.log | awk '$1=="'$sn'" {print $4}')
-                         echo " $sn check Spin_Up_Time is $Spin_Up_Time" >>result.log
-
-                         Reallocated_Sector_Ct=$(cat after.log | awk '$1=="'$sn'" {print $5}')
-                         echo " $sn check Reallocated_Sector_Ct is $Reallocated_Sector_Ct" >>result.log
-
-                         Seek_Error_Rate=$(cat after.log | awk '$1=="'$sn'" {print $6}')
-                         echo " $sn check Seek_Error_Rate is $Seek_Error_Rate" >>result.log
-
-                         Spin_Retry_Count=$(cat after.log | awk '$1=="'$sn'" {print $7}')
-                         echo " $sn check Spin_Retry_Count is $Spin_Retry_Count" >>result.log
-
-                         Temperature_Celsius=$(cat after.log | awk '$1=="'$sn'" {print $8}')
-                         echo " $sn check Temperature_Celsius is $Temperature_Celsius" >>result.log
-
-                         Offline_Uncorrectable=$(cat after.log | awk '$1=="'$sn'" {print $9}')
-                         echo " $sn check Offline_Uncorrectable is $Offline_Uncorrectable" >>result.log
-
-                         health=$(cat after.log | awk '$1=="'$sn'" {print $11}')
-                         echo " $sn  check health is $health" >>result.log
-
-                         #echo "check ICRC"
-                         icrc_after=$(cat after.log | awk '$1=="'$sn'" {print $NF}')
-                         if [ "$icrc_after" == $icrc_before ]; then
-                              echo " $sn ICRC check pass. ICRC IS $icrc_after" >>result.log
-                         else
-                              echo " $sn ICRC check failed. ICRC is $icrc_after" >>result.log
-                         fi
-                         UDMA_after=$(cat after.log | awk '$1=="'$sn'" {print $10}')
-                         if [ "$UDMA_after" == "$UDMA_before" ]; then
-                              echo " $sn UDMA check pass. UDMA_before is $UDMA_before UDMA_after is $UDMA_after" >>result.log
-                         else
-                              echo " $sn UDMA check failed. UDMA_before is $UDMA_before UDMA_after is $UDMA_after" >>result.log
-                         fi
-
-                    else
-                         echo " $sn is lost,check failed" >>result.log
-                    fi
-               done
-          }
-
-          Port=$(wdckit s | grep -i "tb" | awk '{print $3}')
-          if [ "$Port" = "SAS" ]; then
-               Smartafter_SAS
-               echo -e "\nCollect SAS Smart_Info\n"
-          else
-               Smartafter_SATA
-               echo -e "\nCollect SATA Smart_Info\n"
-          fi
-
-          echo -e "\n----------Finish SmartInfo_after Collect and Compare----------\n"
-
-     }
 
      cd /"$Dir_Pre"/Hot_Swap || exit
-     SmartInfo_after_Swap
+     SmartInfo
 
      grep -i failed result.log >failed.log
      mkdir result
@@ -555,73 +599,7 @@ function Hot_Swap() {
 
 function Hotplug_Raid() {
 
-     function SmartInfo_before_Raid() {
-
-          #判定是SATA盘还是SAS盘，收集不同的数据
-          echo -e "\n----------Create folder to collect smart_before----------\n"
-
-          function Smart_SAS() {
-               mkdir smart_before
-               echo -e "SN         SLOT Temp Read_error Write_error Elements Healthy DWORD1  \tDWORD2  " >before.log
-               for hdd in $(smartctl --scan | grep -i megaraid | awk '{print $3}' | awk -F "/" '{print $NF}'); do
-                    dev=$(smartctl --scan | awk '{print $1}' | uniq)
-                    sn=$(smartctl -a -d "$hdd" "$dev" | grep -i "Serial number:" | awk '{print $NF}')
-                    rpm=$(smartctl -a -d "$hdd" "$dev" | grep "Rotation Rate:" | awk '{print $NF}')
-                    if [ "$rpm" != "rpm" ]; then
-                         echo " $sn is ssd"
-                    else
-                         smartctl -a -d "$hdd" "$dev" >smart_before_"$sn".log
-                         tem=$(grep "Current Drive Temperature" smart_before_"sn".log | awk '{if($(NF-1) <= 60) print "pass";else print "failed"}')
-                         Readerror=$(grep "Error counter log:" -A 10 smart_before_"$sn".log | grep "read:" | awk '{if($NF <= 0) print "pass";else print "failed"}')
-                         Writeerror=$(grep "Error counter log:" -A 10 smart_before_"$sn".log | grep "write:" | awk '{if($NF == 0) print "pass";else print "failed"}')
-                         Elements=$(grep "Elements in grown defect list:" smart_before_"$sn".log | awk '{if ($NF == 0) print "pass";else print "failed"}')
-                         Healthy=$(grep "SMART Health Status:" smart_before_"$sn".log | awk '{if ($NF == "OK") print "pass";else print "failed"}')
-                         DWORD1=$(grep "Invalid DWORD count" smart_before_"$sn".log | sed 2,2d | awk '{print $NF}')
-                         DWORD2=$(grep "Invalid DWORD count" smart_before_"$sn".log | sed 1,1d | awk '{print $NF}')
-                         echo -e "$sn   $hdd  $tem $Readerror       $Writeerror        $Elements     $Healthy    $DWORD1  \t\t\t$DWORD2  " >>before.log
-                    fi
-               done
-          }
-
-          function Smart_SATA() {
-               mkdir smart_before
-               echo "SN       SLOT 1    3    5    7    10   194  198  199  health ICRC" >before.log
-               for hdd in $(smartctl --scan | grep -i megaraid | awk '{print $3}' | awk -F "/" '{print $NF}'); do
-                    dev=$(smartctl --scan | awk '{print $1}' | uniq)
-                    sn=$(smartctl -a -d "$hdd" "$dev" | grep -i "Serial number:" | awk '{print $NF}')
-                    rpm=$(smartctl -a -d "$hdd" "$dev" | grep "Rotation Rate:" | awk '{print $NF}')
-                    if [ "$rpm" != "rpm" ]; then
-                         echo " $sn is ssd"
-                    else
-                         smartctl -a -d "$hdd" "$dev" >before_"${hdd}"_"${sn}".log
-                         mv before_"${hdd}"_"${sn}".log smart_before
-                         health=$(cat smart_before/before_"${hdd}"*.log | grep -i health | awk '{if ($NF == "PASSED") print "pass";else print "failed"}')
-                         icrc=$(cat smart_before/before_"${hdd}"*.log | grep "ICRC" | awk '{print $3}')
-                         read_error=$(cat smart_before/before_"${hdd}"*.log | grep "Raw_Read_Error_Rate" | awk '{if($4 > $6) print "pass";else print "failed"}')
-                         spin=$(cat smart_before/before_"${hdd}"*.log | grep "Spin_Up_Time" | awk '{if($4 > $6) print "pass";else print "failed"}')
-                         reall=$(cat smart_before/before_"${hdd}"*.log | grep "Reallocated_Sector_Ct" | awk '{if($4 > $6) print "pass";else print "failed"}')
-                         seek=$(cat smart_before/before_"${hdd}"*.log | grep "Seek_Error_Rate" | awk '{if($4 > $6) print "pass";else print "failed"}')
-                         spin_Retry_Count=$(cat smart_before/before_"${hdd}"*.log | grep "Spin_Retry_Count" | awk '{if($4 > $6) print "pass";else print "failed"}')
-                         tem=$(cat smart_before/before_"${hdd}"*.log | grep "Temperature_Celsius" | awk '{if($(NF-2) <= 60) print "pass";else print "failed"}')
-                         offline=$(cat smart_before/before_"${hdd}"*.log | grep "Offline_Uncorrectable" | awk '{if($NF == 0) print "pass";else print "failed"}')
-                         udma=$(cat smart_before/before_"${hdd}"*.log | grep "UDMA_CRC_Error_Count" | awk '{if($NF == 0) print "pass";else print "failed"}')
-                         echo "$sn $hdd  $read_error $spin $reall $seek $spin_Retry_Count $tem $offline $udma $health   $icrc" >>before.log
-                    fi
-               done
-          }
-
-          Port=$(wdckit s | grep -i "tb" | awk '{print $3}')
-          if [ "$Port" = "SAS" ]; then
-               Smart_SAS
-               echo -e "\nCollect SAS Smart_Info\n"
-          else
-               Smart_SATA
-               echo -e "\nCollect SATA Smart_Info\n"
-          fi
-
-          echo -e "\n----------Finish SmartInfo_before Collect----------\n"
-
-     }
+     SmartInfo
 
      mkdir -p /"$Dir_Pre"/Raid
      cd /"$Dir_Pre"/Raid || exit
@@ -857,9 +835,8 @@ function Hotplug_Raid() {
      sleep 300s
      echo -e "\nFinish Rebuild,Collect Log\n"
 
-
      mkdir -p /"$Dir_Pre"/Raid/Second
-     cd /"$Dir_Pre"/Raid/Second ||exit
+     cd /"$Dir_Pre"/Raid/Second || exit
 
      OS_disk=$(df -h | grep boot | awk '{print $1}' | awk -F/ '{print $NF}' | sed -e 's/[0-9]*//g' | sort -u)
      ls /sys/block/ | grep sd | grep -v "$OS_disk" >block
@@ -915,185 +892,7 @@ function Hotplug_Raid() {
      echo -e "\nThe FIO performance data collection is complete. The Devices are ready to be inserted or removed\n"
      sleep 30s
 
-     function SmartInfo_after_Raid() {
-
-          #根据在SmartInfo_before时查询的Port来判定是SATA/SAS盘收集信息
-
-          echo -e "\n----------Create folder to collect smart_after and Compare----------\n"
-
-          function Smartafter_SATA() {
-
-               mkdir smart_after
-               echo -e "SN       SLOT 1    3    5    7    10   194  198  199  health ICRC" >after.log
-               dev=$(smartctl --scan | grep -i "/dev/bus" | awk '{print $1}' | uniq)
-               for hdd in $(smartctl --scan | grep -i megaraid | awk '{print $3}' | awk -F "/" '{print $NF}'); do
-                    sn=$(smartctl -a -d "$hdd" "$dev" | grep -i "Serial number:" | awk '{print $NF}')
-                    smartctl -a -x -d "$hdd" "$dev" >smart_after_"$sn".log
-                    health=$(cat smart_after_"$sn"*.log | grep -i health | awk '{if ($NF == "PASSED") print "pass";else print "failed"}')
-                    icrc=$(cat smart_after_"$sn"*.log | grep "ICRC" | awk '{print $3}')
-                    read_error=$(cat smart_after_"$sn"*.log | grep "Raw_Read_Error_Rate" | awk '{if($4 > $6) print "pass";else print "failed"}')
-                    spin=$(cat smart_after_"$sn"*.log | grep "Spin_Up_Time" | awk '{if($4 > $6) print "pass";else print "failed"}')
-                    reall=$(cat smart_after_"$sn"*.log | grep "Reallocated_Sector_Ct" | awk '{if($4 > $6) print "pass";else print "failed"}')
-                    seek=$(cat smart_after_"$sn"*.log | grep "Seek_Error_Rate" | awk '{if($4 > $6) print "pass";else print "failed"}')
-                    spin_Retry_Count=$(cat smart_after_"$sn"*.log | grep "Spin_Retry_Count" | awk '{if($4 > $6) print "pass";else print "failed"}')
-                    tem=$(cat smart_after_"$sn"*.log | grep "Temperature_Celsius" | awk '{if($(NF-2) <= 60) print "pass";else print "failed"}')
-                    offline=$(cat smart_after_"$sn"*.log | grep "Offline_Uncorrectable" | awk '{if($NF == 0) print "pass";else print "failed"}')
-                    udma=$(cat smart_after_"$sn"*.log | grep "UDMA_CRC_Error_Count" | awk '{if($NF == 0) print "pass";else print "failed"}')
-
-                    echo "$sn $hdd  $read_error $spin $reall $seek $spin_Retry_Count $tem $offline $udma $health   $icrc" >>after.log
-               done
-
-               echo -e "Smart_after collection completed,then compare with smart_before.\n"
-
-               for sn in $(cat before.log | sed 1d | awk '{print $1}'); do
-                    slot_before=$(awk '$1=="'$sn'" {print $2}' before.log)
-                    icrc_before=$(awk '$1=="'$sn'" {print $NF}' before.log)
-                    UDMA_before=$(awk '$1=="'$sn'"{print $10}' before.log)
-                    sn_after=$(awk '$1=="'$sn'" {print $1}' after.log)
-
-                    if [ "$sn_after" == "$sn" ]; then
-                         echo "----------$sn is exiting ,not lost,check pass----------" >>result.log
-
-                         slot_after=$(cat after.log | awk '$1=="'$sn'" {print $2}')
-                         if [ "$slot_after" == $slot_before ]; then
-                              echo " $sn slot ch098 eck pass.slot is $slot_after" >>result.log
-                         else
-                              echo " $sn slot check failed. slot is $slot_after" >>result.log
-                         fi
-
-                         # echo "check 1 3 5 7 10 194 198 199 health"
-                         Raw_Read_Error_Rate=$(cat after.log | awk '$1=="'$sn'" {print $3}')
-                         echo " $sn check Raw_Read_Error_Rate is $Raw_Read_Error_Rate" >>result.log
-
-                         Spin_Up_Time=$(cat after.log | awk '$1=="'$sn'" {print $4}')
-                         echo " $sn check Spin_Up_Time is $Spin_Up_Time" >>result.log
-
-                         Reallocated_Sector_Ct=$(cat after.log | awk '$1=="'$sn'" {print $5}')
-                         echo " $sn check Reallocated_Sector_Ct is $Reallocated_Sector_Ct" >>result.log
-
-                         Seek_Error_Rate=$(cat after.log | awk '$1=="'$sn'" {print $6}')
-                         echo " $sn check Seek_Error_Rate is $Seek_Error_Rate" >>result.log
-
-                         Spin_Retry_Count=$(cat after.log | awk '$1=="'$sn'" {print $7}')
-                         echo " $sn check Spin_Retry_Count is $Spin_Retry_Count" >>result.log
-
-                         Temperature_Celsius=$(cat after.log | awk '$1=="'$sn'" {print $8}')
-                         echo " $sn check Temperature_Celsius is $Temperature_Celsius" >>result.log
-
-                         Offline_Uncorrectable=$(cat after.log | awk '$1=="'$sn'" {print $9}')
-                         echo " $sn check Offline_Uncorrectable is $Offline_Uncorrectable" >>result.log
-
-                         health=$(cat after.log | awk '$1=="'$sn'" {print $11}')
-                         echo " $sn  check health is $health" >>result.log
-
-                         icrc_after=$(cat after.log | awk '$1=="'$sn'" {print $NF}')
-                         if [ "$icrc_after" == $icrc_before ]; then
-                              echo " $sn ICRC check pass. ICRC IS $icrc_after" >>result.log
-                         else
-                              echo " $sn ICRC check failed. ICRC is $icrc_after" >>result.log
-                         fi
-                         UDMA_after=$(cat after.log | awk '$1=="'$sn'" {print $10}')
-                         if [ "$UDMA_after" == "$UDMA_before" ]; then
-                              echo " $sn UDMA check pass. UDMA_before is $UDMA_before UDMA_after is $UDMA_after" >>result.log
-                         else
-                              echo " $sn UDMA check failed. UDMA_before is $UDMA_before UDMA_after is $UDMA_after" >>result.log
-                         fi
-
-                    else
-                         echo " $sn is lost,check failed" >>result.log
-                    fi
-               done
-
-          }
-
-          function Smartafter_SAS() {
-               mkdir smart_after
-               dev=$(smartctl --scan | grep -i "/dev/bus" | awk '{print $1}' | uniq)
-               echo -e "SN         SLOT Temp Read_error Write_error Elements Healthy DWORD1  \tDWORD2  " >before.log
-               for hdd in $(smartctl --scan | grep -i megaraid | awk '{print $3}' | awk -F "/" '{print $NF}'); do
-                    sn=$(smartctl -a -d "$hdd" "$dev" | grep -i "Serial number:" | awk '{print $NF}')
-                    rpm=$(smartctl -a -d "$hdd" "$dev" | grep "Rotation Rate:" | awk '{print $NF}')
-                    if [ "$rpm" != "rpm" ]; then
-                         echo " $sn is ssd"
-                    else
-                         smartctl -a -x -d "$hdd" "$dev" >smart_after_"$sn".log
-                         tem=$(grep "Current Drive Temperature" smart_after_"$sn".log | awk '{if($(NF-1) <= 60) print "pass";else print "failed"}')
-                         Readerror=$(grep "Error counter log:" -A 10 smart_after_"$sn".log | grep "read:" | awk '{if($NF <= 0) print "pass";else print "failed"}')
-                         Writeerror=$(grep "Error counter log:" -A 10 smart_after_"$sn".log | grep "write:" | awk '{if($NF == 0) print "pass";else print "failed"}')
-                         Elements=$(grep "Elements in grown defect list:" smart_after_"$sn".log | awk '{if ($NF == 0) print "pass";else print "failed"}')
-                         Healthy=$(grep "SMART Health Status:" smart_after_"$sn".log | awk '{if ($NF == "OK") print "pass";else print "failed"}')
-                         DWORD1=$(grep "Invalid DWORD count" smart_after_"$sn".log | sed 2,2d | awk '{print $NF}')
-                         DWORD2=$(grep "Invalid DWORD count" smart_after_"$sn".log | sed 1,1d | awk '{print $NF}')
-                         echo -e "$sn   $hdd  $tem $Readerror       $Writeerror        $Elements     $Healthy    $DWORD1  \t\t\t$DWORD2  " >>after.log
-                    fi
-               done
-
-               for sn in $(awk '{print $1}' before.log | sed 1d); do
-                    slot_before=$(awk '$1=="'$sn'" {print $2}' before.log)
-                    DWORD1_before=$(awk '$1=="'$sn'" {print $(NF-1)}' before.log)
-                    DWORD2_before=$(awk '$1=="'$sn'"  {print  $NF}' before.log)
-                    sn_after=$(awk '$1=="'$sn'" {print $1}' after.log)
-
-                    if [ "$sn_after" == "$sn" ]; then
-                         echo "**********$sn is exiting ,not lost,check pass***************" >>result.log
-
-                         slot_after=$(awk '$1=="'$sn'" {print $2}' after.log)
-                         if [ "$slot_after" == "$slot_before" ]; then
-                              echo " $sn slot check pass.slot is $slot_after" >>result.log
-                         else
-                              echo " $sn slot check failed. slot is $slot_after" >>result.log
-                         fi
-
-                         Current_Drive_Temp=$(awk '$1=="'$sn'" {print $3}' after.log)
-                         echo " $sn check Current_Drive_Temp is $Current_Drive_Temp" >>result.log
-
-                         Read_Total_Uncorrected_Errors=$(awk '$1== "'$sn'" {print $4}' after.log)
-                         echo " $sn check Read_Total_Uncorrected_Errors is $Read_Total_Uncorrected_Errors" >>result.log
-
-                         Write_Total_Uncorrected_Errors=$(awk '$1=="'$sn'" {print $5}' after.log)
-                         echo " $sn check Write_Total_Uncorrected_Errors $Write_Total_Uncorrected_Errors" >>result.log
-
-                         Elements_in_grown_defect_list=$(awk '$1=="'$sn'" {print $6}' after.log)
-                         echo " $sn check Elements_in_grown_defect_list is $Elements_in_grown_defect_list" >>result.log
-
-                         health=$(awk '$1=="'$sn'" {print $7}' after.log)
-                         echo " $sn  check health is $health" >>result.log
-
-                         Invalid_DWORD_Count1=$(awk '$1=="'$sn'" {print $8}' after.log)
-                         echo " $sn check Invalid_DWORD_Count1_before is $Invalid_DWORD_Count1" >>result.log
-
-                         Invalid_DWORD_Count2=$(awk '$1=="'$sn'" {print $9}' after.log)
-                         echo " $sn check Invalid_DWORD_Count2_before is $Invalid_DWORD_Count2" >>result.log
-
-                         DWORD1_after=$(awk '$1=="'$sn'" {print $(NF-1)}' after.log)
-                         DWORD2_after=$(awk '$1=="'$sn'" {print $(NF)}' after.log)
-                         if [ "$DWORD1_after" -lt "$((DWORD1_before + 200))" ]; then
-                              echo " $sn Invalid_DWORD_Count1 check pass. Invalid_DWORD_Count1_after IS $DWORD1_after" >>result.log
-                         else
-                              echo " $sn Invalid_DWORD_Count1 check failed. Invalid_DWORD_Count1_before is $DWORD1_before; Invalid_DWORD_Count1_after is  IS $DWORD1_after" >>result.log
-                         fi
-                         if [ "$DWORD2_after" -lt "$((DWORD2_before + 200))" ]; then
-                              echo " $sn Invalid_DWORD_Count2 check pass. Invalid_DWORD_Count2_after IS $DWORD2_after" >>result.log
-                         else
-                              echo " $sn Invalid_DWORD_Count2 check failed. DWORD2_before is $DWORD2_before; Invalid_DWORD_Count2_after is  IS $DWORD2_after" >>result.log
-                         fi
-
-                    else
-                         echo " $sn is lost,check failed" >>result.log
-                    fi
-               done
-          }
-
-          if [ "$Port" = "SAS" ]; then
-               Smartafter_SAS
-               echo -e "\nCollect SAS Smart_Info\n"
-          else
-               Smartafter_SATA
-               echo -e "\nCollect SATA Smart_Info\n"
-          fi
-
-          echo -e "\n----------Finish SmartInfo_after Collect and Compare----------\n"
-     }
+    SmartInfo
 
      cd /"$Dir_Pre"/Raid || exit
      SmartInfo_after_Raid
