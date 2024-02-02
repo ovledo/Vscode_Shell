@@ -14,7 +14,7 @@ else
     echo -e "\nos disk os $bootdisk\n"
 fi
 
-SmarrtInfo
+
 
 function SmartInfo() {
 
@@ -265,3 +265,5 @@ function SmartInfo() {
     mv result.log result
 
 }
+
+SmarrtInfo
