@@ -1,5 +1,27 @@
 #!/usr/bin/env bash
 
+#开始HotPlug(mount Device),并进行检查;(此时硬盘状态已为JBOD并且所有分区及内容全部删除)
+#wipefs -af /dev/sd*
+
+for Clear in $(wdckit s | grep -i "/dev/sd" | grep -vw "$bootdisk" | awk '{print $2}'); do
+     wipefs -af "$Clear"
+     sleep 5s
+done
+echo -e "\nClear all log and mkdir Begin test\n"
+
+#脚本所在路径为Dir_pre
+Dir_Pre=$(pwd)
+mkdir -p /"$Dir_Pre"/Hot_Swap
+cd /"$Dir_Pre"/Hot_Swap || exit
+
+####----------系统变量----------###
+Raid_Status=$(storcli64 /c0 show | grep -i "PD List" -A 20 | grep EID:Slt -A 15 | grep -v '^-*$' | sed '1d' | awk '{for(i=1;i<NF;i++) {if ( $i == "SATA" || $i == "SAS" ) print $i}}' | uniq)
+AHCI_Status=$(wdckit s | grep Port -A 10 | awk '{print $3}' | grep -v '^-*$' | sed 1d | uniq)
+Controller_Status=$(storcli64 /c0 show | grep Status | awk '{print $NF}')
+Device_Status=$(storcli64 /c0 show | grep -i "pd list" -A 20 | grep HDD | awk '{print $3}' | sort -u)
+Device_Type=$(storcli64 /c0 show | grep -i "pd list" -A 20 | grep HDD | awk '{print $NF}' | sort -u)
+System_num=$(storcli64 /c0 show | grep -i "pd list" -A 20 | grep -c HDD)
+
 ####----------确认系统盘----------###
 bootdisk=$(df -h | grep -i boot | awk '{print $1}' | grep -iE "/dev/sd" | sed 's/[0-9]//g' | sort -u | awk -F "/" '{print $NF}')
 if test -z "$bootdisk"; then
@@ -245,20 +267,6 @@ function SmartInfo() {
           fi
      }
 
-     Raid_Status=$(storcli64 /c0 show | grep -i "PD List" -A 20 | grep EID:Slt -A 15 | grep -v '^-*$' | sed '1d' | awk '{for(i=1;i<NF;i++) {if ( $i == "SATA" || $i == "SAS" ) print $i}}' | uniq)
-     AHCI_Status=$(wdckit s | grep Port -A 10 | awk '{print $3}' | grep -v '^-*$' | sed 1d | uniq)
-     Controller_Status=$(storcli64 /c0 show | grep Status | awk '{print $NF}')
-     Device_Status=$(storcli64 /c0 show | grep -i "pd list" -A 20 | grep HDD | awk '{print $3}' | sort -u)
-     Device_Type=$(storcli64 /c0 show | grep -i "pd list" -A 20 | grep HDD | awk '{print $NF}' | sort -u)
-
-     bootdisk=$(df -h | grep -i boot | awk '{print $1}' | grep -iE "/dev/sd" | sed 's/[0-9]//g' | sort -u | awk -F "/" '{print $NF}')
-     if test -z "$bootdisk"; then
-          bootdisk=$(df -h | grep -i boot | awk '{print $1}' | grep -iE "/dev/nvme" | sed 's/p[0-9]//g' | sort -u | awk -F "/" '{print $NF}')
-          echo -e "\nos disk os $bootdisk\n"
-     else
-          echo -e "\nos disk os $bootdisk\n"
-     fi
-
      if [ "$Raid_Status" = "SATA" ] || [ "$AHCI_Status" = "SATA" ]; then
           SmartInfo_SATA
      else
@@ -275,21 +283,63 @@ function SmartInfo() {
      fi
 }
 
-#开始HotPlug(mount Device),并进行检查;(此时硬盘状态已为JBOD并且所有分区及内容全部删除)
-#wipefs -af /dev/sd*
+###------------FIO任务-----------###
+function FIO_Block() {
 
-for Clear in $(wdckit s | grep -i "/dev/sd" | grep -vw "$bootdisk" | awk '{print $2}'); do
-     wipefs -af "$Clear"
-     sleep 5s
-done
+     mkdir -p /"$Cur_Dir"/"$1"
+     cd /"$Cur_Dir"/"$1" || exit
 
-echo -e "\nClear all log and mkdir Begin test\n"
+     mkdir -p 1M_{SW,SR} 4K_{RR,RW}
 
-Dir_Pre=$(pwd)
+     ls /sys/block/ | grep sd | grep -v "$bootdisk" >block
 
-mkdir -p /"$Dir_Pre"/Hot_Swap
-cd /"$Dir_Pre"/Hot_Swap || exit
-System_num=$(storcli64 /c0 show | grep -i "pd list" -A 20 | grep -i jbod | wc -l)
+     num=$(wc -l block)
+     echo -e "\nTotal $num Device in the system\n"
+
+     while read line; do
+          echo "[${line}_seq_write_1M]" >>1M_SW/jobfile_sw
+          echo "filename=/dev/$line" >>1M_SW/jobfile_sw
+
+          echo "[${line}_seq_read_1M]" >>1M_SR/jobfile_sr
+          echo "filename=/dev/${line}" >>1M_SR/jobfile_sr
+
+          echo "[${line}_randwrite_4k]" >>4K_RW/jobfile_rw
+          echo "filename=/dev/${line}" >>4K_RW/jobfile_rw
+
+          echo "[${line}_randread_4k]" >>4K_RR/jobfile_rr
+          echo "filename=/dev/${line}" >>4K_RR/jobfile_rr
+     done <block
+
+     echo -e "\n----------Do Sequential Write----------\n"
+     cd 1M_SW || exit
+     fio jobfile_sw --ioengine=libaio --randrepeat=0 --norandommap --thread --direct=1 --group_reporting --ramp_time=60 --runtime=300 --time_based --numjobs=1 --iodepth=32 --rw=write --bs=1M --output=1M_seqW.log --log_avg_msec=1000 --write_iops_log=1M_seqW_iops.log --write_lat_log=1M_seqW_lat.log &
+     sleep 450s
+     cd ..
+
+     echo -e "\n----------Do Sequential Read----------\n"
+     cd 1M_SR || exit
+     fio jobfile_sr --ioengine=libaio --randrepeat=0 --norandommap --thread --direct=1 --group_reporting --ramp_time=60 --runtime=300 --time_based --numjobs=1 --iodepth=32 --rw=read --bs=1M --output=1M_seqR.log --log_avg_msec=1000 --write_iops_log=1M_seqR_iops.log --write_lat_log=1M_seqR_lat.log &
+     sleep 450s
+     cd ..
+
+     echo -e "\n----------Do Random Write----------\n"
+     cd 4K_RW || exit
+     fio jobfile_rw --ioengine=libaio --randrepeat=0 --norandommap --thread --direct=1 --group_reporting --ramp_time=60 --runtime=300 --time_based --numjobs=1 --iodepth=64 --rw=randwrite --bs=4k --output=4K_randW.log --log_avg_msec=1000 --write_iops_log=4K_randW_iops.log --write_lat_log=4K_randW_lat.log &
+     sleep 450s
+     cd ..
+
+     echo -e "\n----------Do Random Read----------\n"
+     cd 4K_RR || exit
+     fio jobfile_rr --ioengine=libaio --randrepeat=0 --norandommap --thread --direct=1 --group_reporting --ramp_time=60 --runtime=300 --time_based --numjobs=1 --iodepth=64 --rw=randread --bs=4k --output=4K_randR.log --log_avg_msec=1000 --write_iops_log=4K_randR_iops.log --write_lat_log=4K_randR_lat.log &
+     sleep 450s
+     cd ..
+
+     echo -e "\nFinish $1 FIO task.\n"
+     sleep 30s
+
+     cd ..
+
+}
 
 ###----------覆盖有无IO的热插拔测试---------###
 function Hot_Swap() {
@@ -574,17 +624,6 @@ function Hot_Swap() {
 
      cd /"$Dir_Pre"/Hot_Swap || exit
      SmartInfo
-
-     grep -i failed result.log >failed.log
-     mkdir result
-     mv before.log result
-     mv after.log result
-     mv failed.log result
-     mv result.log result
-
-     mv smart_before_*.log smart_before
-     mv smart_after_*.log smart_after
-
      sleep 10s
 
      ###-----SmartInfo收集完成，收集系统信息-----###
@@ -599,11 +638,12 @@ function Hot_Swap() {
 
 function Hotplug_Raid() {
 
-     SmartInfo
-
+     ###--------收集smartInfo_before----------###
      mkdir -p /"$Dir_Pre"/Raid
      cd /"$Dir_Pre"/Raid || exit
-     SmartInfo_before_Raid
+     Cur_Dir=$(pwd)
+
+     SmartInfo
 
      #判定是否有Virtual disk
      Virtural_num=$(storcli64 /c0/vall show | grep -i "Virtual Drives :" -A 15 | grep -i "raid" | awk '{print $2}')
@@ -632,12 +672,12 @@ function Hotplug_Raid() {
      if [ "$Status" = "UGood" ]; then
           echo "UG Mode Success"
      else
-          echo "check Devices Status"
+          echo "check Devices Status,Can't Build Raid1"
           exit 0
      fi
 
      for ((EID_index = 1; EID_index < 10; EID_index++)); do
-          EID_String=$(storcli /c0 show | grep -i "pd list" -A 15 | grep -i eid | awk '{print $'$EID_index' }')
+          EID_String=$(storcli /c0 show | grep -i "pd list" -A 15 | grep -i eid | awk '{print $'$EID_index'}')
 
           if [ "$EID_String" = "EID:Slt" ]; then
                EID=$(storcli /c0 show | grep -i "pd list" -A 15 | grep -i tb | awk '{print $'$EID_index'}' | awk -F ":" '{print $1}' | uniq)
@@ -648,10 +688,27 @@ function Hotplug_Raid() {
      done
 
      for Capacity in $(storcli64 /c0 show | grep -i "pd list" -A 20 | grep -i tb | awk '{print $5}' | sort -n | uniq); do
-          Slot_1=$(storcli64 /c0 show | grep -i "pd list" -A 20 | grep -i tb | grep "$Capacity" | awk '{print $1}' | awk -F ":" '{print $2}' | sed -n '1p')
-          Slot_2=$(storcli64 /c0 show | grep -i "pd list" -A 20 | grep -i tb | grep "$Capacity" | awk '{print $1}' | awk -F ":" '{print $2}' | sed -n '2p')
-          storcli64 /c0 add vd type=raid1 drive="$EID":"$Slot_1","$Slot_2"
-          sleep 10s
+          Slot_num=$(storcli64 /c0 show | grep -i "pd list" -A 20 | grep -i tb | grep -c "$Capacity")
+          if [ "$Slot_num" -eq 2 ]; then
+               Slot_1=$(storcli64 /c0 show | grep -i "pd list" -A 20 | grep -i tb | grep "$Capacity" | awk '{print $1}' | awk -F ":" '{print $2}' | sed -n '1p')
+               Slot_2=$(storcli64 /c0 show | grep -i "pd list" -A 20 | grep -i tb | grep "$Capacity" | awk '{print $1}' | awk -F ":" '{print $2}' | sed -n '2p')
+               storcli64 /c0 add vd type=raid1 drive="$EID":"$Slot_1","$Slot_2"
+               sleep 10s
+          elif [ "$Slot_num" -gt 3 ]; then
+               i=1
+               j=2
+               while [ $(("$j" + 2)) -le "$Slot_num" ]; do
+                    Slot_1=$(storcli64 /c0 show | grep -i "pd list" -A 20 | grep -i tb | grep "$Capacity" | awk '{print $1}' | awk -F ":" '{print $2}' | sed -n "$i"p)
+                    Slot_2=$(storcli64 /c0 show | grep -i "pd list" -A 20 | grep -i tb | grep "$Capacity" | awk '{print $1}' | awk -F ":" '{print $2}' | sed -n "$j"p)
+
+                    storcli64 /c0 add vd type=raid1 drive="$EID":"$Slot_1","$Slot_2"
+                    sleep 5s
+
+                    ((i += 2)) | true
+                    ((j += 2)) | true
+               done
+          fi
+
      done
 
      #重复查询是否成功建立raid1
@@ -664,89 +721,30 @@ function Hotplug_Raid() {
           exit 0
      fi
 
-     #开启fio任务，并且使用iosta去记录不同的性能
+     #开启第一次FIO，记录FIO数据并在结束后，开启第二次FIO
 
-     OS_disk=$(df -h | grep boot | awk '{print $1}' | awk -F/ '{print $NF}' | sed -e 's/[0-9]*//g' | sort -u)
-     ls /sys/block/ | grep sd | grep -v "$OS_disk" >block
-     num=$(wc -l block)
-     echo -e "\nTotal $num Device in the system\n"
-
-     while read line; do
-          echo "[${line}_seq_write_1M]" >>jobfile_sw
-          echo "filename=/dev/$line" >>jobfile_sw
-
-          echo "[${line}_seq_read_1M]" >>jobfile_sr
-          echo "filename=/dev/${line}" >>jobfile_sr
-
-          echo "[${line}_randwrite_4k]" >>jobfile_rw
-          echo "filename=/dev/${line}" >>jobfile_rw
-
-          echo "[${line}_randread_4k]" >>jobfile_rr
-          echo "filename=/dev/${line}" >>jobfile_rr
-     done <block
-
-     Cur_Dir=$(pwd)
-
-     echo -e "\n----------Do Sequential Write----------\n"
-     mkdir -p /"$Cur_Dir"/1M_SW
-     cd 1M_SW || exit
-     cp "$Cur_Dir"/jobfile_sw /"$Cur_Dir"/1M_SW
-     fio jobfile_sw --ioengine=libaio --randrepeat=0 --norandommap --thread --direct=1 --group_reporting --ramp_time=60 --runtime=300 --time_based --numjobs=1 --iodepth=32 --rw=write --bs=1M --output=1M_seqW.log --log_avg_msec=1000 --write_iops_log=1M_seqW_iops.log --write_lat_log=1M_seqW_lat.log &
-     sleep 450s
-     cd ..
-
-     echo -e "\n----------Do Sequential Read----------\n"
-     mkdir -p /"$Cur_Dir"/1M_SR
-     cd 1M_SR || exit
-     cp "$Cur_Dir"/jobfile_sr /"$Cur_Dir"/1M_SR
-     fio jobfile_sr --ioengine=libaio --randrepeat=0 --norandommap --thread --direct=1 --group_reporting --ramp_time=60 --runtime=300 --time_based --numjobs=1 --iodepth=32 --rw=read --bs=1M --output=1M_seqR.log --log_avg_msec=1000 --write_iops_log=1M_seqR_iops.log --write_lat_log=1M_seqR_lat.log &
-     sleep 450s
-     cd ..
-
-     echo -e "\n----------Do Random Write----------\n"
-     mkdir -p /"$Cur_Dir"/4K_RW
-     cd 4K_RW || exit
-     cp "$Cur_Dir"/jobfile_rw /"$Cur_Dir"/4K_RW
-     fio jobfile_rw --ioengine=libaio --randrepeat=0 --norandommap --thread --direct=1 --group_reporting --ramp_time=60 --runtime=300 --time_based --numjobs=1 --iodepth=64 --rw=randwrite --bs=4k --output=4K_randW.log --log_avg_msec=1000 --write_iops_log=4K_randW_iops.log --write_lat_log=4K_randW_lat.log &
-     sleep 450s
-     cd ..
-
-     echo -e "\n----------Do Random Read----------\n"
-     mkdir -p /"$Cur_Dir"/4K_RR
-     cd 4K_RR || exit
-     cp "$Cur_Dir"/jobfile_rr /"$Cur_Dir"/4K_RR
-     fio jobfile_rr --ioengine=libaio --randrepeat=0 --norandommap --thread --direct=1 --group_reporting --ramp_time=60 --runtime=300 --time_based --numjobs=1 --iodepth=64 --rw=randread --bs=4k --output=4K_randW.log --log_avg_msec=1000 --write_iops_log=4K_randW_iops.log --write_lat_log=4K_randW_lat.log &
-     sleep 450s
-     cd ..
-
-     mkdir -p First_FIO
-     mv 1M_SW/ First_FIO/
-     mv 1M_SR/ First_FIO/
-     mv 4K_RW/ First_FIO/
-     mv 4K_RR/ First_FIO/
-
-     echo -e "\nThe FIO performance data collection is complete. The Devices are ready to be inserted or removed\n"
-     sleep 30s
+     FIO_Block First_FIO
 
      #重新建立一个文件夹，并运行任一fio，性能稳定后将盘拔出
+
      echo -e "\n----------Do Fio keep performance----------\n"
+
      mkdir -p /"$Cur_Dir"/Second_FIO
      cd Second_FIO || exit
-     cp "$Cur_Dir"/jobfile_sr /"$Cur_Dir"/Second_FIO
+     cp "$Cur_Dir"/First_FIO/1M_SR/jobfile_sr /"$Cur_Dir"/Second_FIO
      fio jobfile_sr --ioengine=libaio --randrepeat=0 --norandommap --thread --direct=1 --group_reporting --ramp_time=60 --runtime=300 --time_based --numjobs=1 --iodepth=32 --rw=read --bs=1M >>Second_FIO.log &
      sleep 220s
      cd ..
 
      #提示插拔盘并识别,将硬盘拔出和插入过程记录
-
      #记录未拔出硬盘时间/硬盘数量
-     date | tee -a process.log
+     echo -e "\n[ $(date "+%F %T") ]\n" >>process.log
      wdckit s | tee -a process.log
      storcli64 /c0 show | grep -i "vd list" -A 40 | tee -a process.log
-     echo -e "\n[ $(date "+%F %T") ]\n" >>process.log
 
      echo -e "\nCollect All Devices data,ready to swap Devices\n"
-     echo -e "\n----------swap the disk----------\n"
+     echo -e "\n----------Please Swap the disk and Check later----------\n"
+     sleep 30s
 
      #拔出硬盘并在键盘输入，判定是否拔出所有硬盘
      read -r -p "Have all the drives been removed? [Y/n] " input
@@ -807,25 +805,25 @@ function Hotplug_Raid() {
      #当硬盘状态为rebuild且raid状态为dgrd时为正确状态
 
      Virtual_Status=$(storcli64 /c0/vall show | grep -i "rwtd" | awk '{print $3}' | sort -u)
-     Device_StatusNums=$(storcli64 /c0 show | grep -i "pd list" -A 15 | grep -i "rbld" | wc -l)
+     Device_StatusNums=$(storcli64 /c0 show | grep -i "pd list" -A 20 | grep -i "rbld" | wc -l)
      System_Raidnum=$(("$System_num" / 2))
 
      if [ "$Virtual_Status" = "Dgrd" ] && [ "$Device_StatusNums" = "$System_Raidnum" ]; then
           echo "Devices are doing rebuilding"
      else
-          echo "Devices are Status false,test ending"
+          echo "Devices are Status false,can't rebuild raid1.Test Failure"
           exit 0
      fi
 
      #记录此时硬盘正在rebuild
 
      echo -e "\n[ $(date "+%F %T") ]\n" >>process.log
-     wdckit s | tee -a process.log
+     wdckit s | te e -a process.log
      storcli64 /c0 show | grep -i "vd list" -A 40 | tee -a process.log
 
      sleep 15s
 
-     echo -e "\n\nTest finish\n"
+     echo -e "\n\nDevice is being rebuilding\n"
 
      while [ "$Virtual_Status" = "Dgrd" ]; do
           sleep 1800s
@@ -833,78 +831,15 @@ function Hotplug_Raid() {
      done
 
      sleep 300s
-     echo -e "\nFinish Rebuild,Collect Log\n"
+     echo -e "\nFinish Rebuild,Prepare Collect Log\n"
 
-     mkdir -p /"$Dir_Pre"/Raid/Second
-     cd /"$Dir_Pre"/Raid/Second || exit
+     echo -e "\n[ $(date "+%F %T") ]\n" >>process.log
+     wdckit s | te e -a process.log
+     storcli64 /c0 show | grep -i "vd list" -A 40 | tee -a process.log
 
-     OS_disk=$(df -h | grep boot | awk '{print $1}' | awk -F/ '{print $NF}' | sed -e 's/[0-9]*//g' | sort -u)
-     ls /sys/block/ | grep sd | grep -v "$OS_disk" >block
-     num=$(wc -l block)
-     echo -e "\nTotal $num Device in the system\n"
+     FIO_Block Third
 
-     while read line; do
-          echo "[${line}_seq_write_1M]" >>jobfile_sw
-          echo "filename=/dev/$line" >>jobfile_sw
-
-          echo "[${line}_seq_read_1M]" >>jobfile_sr
-          echo "filename=/dev/${line}" >>jobfile_sr
-
-          echo "[${line}_randwrite_4k]" >>jobfile_rw
-          echo "filename=/dev/${line}" >>jobfile_rw
-
-          echo "[${line}_randread_4k]" >>jobfile_rr
-          echo "filename=/dev/${line}" >>jobfile_rr
-     done <block
-
-     echo -e "\n----------Do Sequential Write----------\n"
-     mkdir -p /"$Dir_Pre"/Raid/Second/1M_SW
-     cd 1M_SW || exit
-     cp "$Cur_Dir"/jobfile_sw /"$Dir_Pre"/Raid/Second/1M_SW
-     fio jobfile_sw --ioengine=libaio --randrepeat=0 --norandommap --thread --direct=1 --group_reporting --ramp_time=60 --runtime=300 --time_based --numjobs=1 --iodepth=32 --rw=write --bs=1M --output=1M_seqW.log --log_avg_msec=1000 --write_iops_log=1M_seqW_iops.log --write_lat_log=1M_seqW_lat.log &
-     sleep 450s
-     cd ..
-
-     echo -e "\n----------Do Sequential Read----------\n"
-     mkdir -p /"$Dir_Pre"/Raid/Second/1M_SR
-     cd 1M_SR || exit
-     cp "$Cur_Dir"/jobfile_sr /"$Dir_Pre"/Raid/Second/1M_SR
-     fio jobfile_sr --ioengine=libaio --randrepeat=0 --norandommap --thread --direct=1 --group_reporting --ramp_time=60 --runtime=300 --time_based --numjobs=1 --iodepth=32 --rw=read --bs=1M --output=1M_seqR.log --log_avg_msec=1000 --write_iops_log=1M_seqR_iops.log --write_lat_log=1M_seqR_lat.log &
-     sleep 450s
-     cd ..
-
-     echo -e "\n----------Do Random Write----------\n"
-     mkdir -p /"$Dir_Pre"/Raid/Second/4K_RW
-     cd 4K_RW || exit
-     cp "$Cur_Dir"/jobfile_rw /"$Dir_Pre"/Raid/Second/4K_RW
-     fio jobfile_rw --ioengine=libaio --randrepeat=0 --norandommap --thread --direct=1 --group_reporting --ramp_time=60 --runtime=300 --time_based --numjobs=1 --iodepth=64 --rw=randwrite --bs=4k --output=4K_randW.log --log_avg_msec=1000 --write_iops_log=4K_randW_iops.log --write_lat_log=4K_randW_lat.log &
-     sleep 450s
-     cd ..
-
-     echo -e "\n----------Do Random Read----------\n"
-     mkdir -p /"$Dir_Pre"/Raid/Second/4K_RR
-     cd 4K_RR || exit
-     cp "$Cur_Dir"/jobfile_rr /"$Dir_Pre"/Raid/Second/4K_RR
-     fio jobfile_rr --ioengine=libaio --randrepeat=0 --norandommap --thread --direct=1 --group_reporting --ramp_time=60 --runtime=300 --time_based --numjobs=1 --iodepth=64 --rw=randread --bs=4k --output=4K_randW.log --log_avg_msec=1000 --write_iops_log=4K_randW_iops.log --write_lat_log=4K_randW_lat.log &
-     sleep 450s
-     cd ..
-
-     echo -e "\nThe FIO performance data collection is complete. The Devices are ready to be inserted or removed\n"
-     sleep 30s
-
-    SmartInfo
-
-     cd /"$Dir_Pre"/Raid || exit
-     SmartInfo_after_Raid
-
-     mv smart_before_*.log smart_before
-     mv smart_after_*.log smart_after
-     grep -i failed result.log >failed.log
-     mkdir result
-     mv before.log result
-     mv after.log result
-     mv failed.log result
-     mv result.log result
+     SmartInfo
 
      ###-----SmartInfo收集完成，收集系统信息-----###
      dmesg >dmesg.log
