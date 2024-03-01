@@ -38,7 +38,7 @@ function SmartInfo_SATA() {
             spin_Retry_Count=$(grep "Spin_Retry_Count" smart_"$1"_"$hdd"_"$sn".log | awk '{if($4 > $6) print "pass";else print "failed"}')
             tem=$(grep "Temperature_Celsius" smart_"$1"_"$hdd"_"$sn".log | awk '{if($(NF-2) <= 60) print "pass";else print "failed"}')
             offline=$(grep "Offline_Uncorrectable" smart_"$1"_"$hdd"_"$sn".log | awk '{if($NF == 0) print "pass";else print "failed"}')
-            udma=$(grep "UDMA_CRC_Error_Count" smart_"$1"_"$hdd"_"$sn".log | awk '{if($NF == 0) print "pass";else print "failed"}')
+            udma=$(grep "UDMA_CRC_Error_Count" smart_"$1"_"$hdd"_"$sn".log | awk '{print $NF}')
             icrc=$(grep -i "ICRC" smart_"$1"_"$hdd"_"$sn".log | awk '{print $3}')
             echo "$sn $hdd  $read_error $spin $reall $seek $spin_Retry_Count $tem $offline $udma $health   $icrc" >>"$1".log
         done <HDD_Slot.log
