@@ -341,23 +341,32 @@ function FIO_Block() {
 
 }
 
+###----------收集系统信息---------###
+function System_log() {
+     if [ "$1" -eq 0 ]; then
+          dmesg -C
+          sleep 5s
+          echo >/var/log/messages
+          sleep 5s
+          ipmitool sel clear
+          sleep 5s
+     elif [ "$1" -eq 1 ]; then
+          dmesg >dmesg.log
+          sleep 5s
+          cat /var/log/messages >messages.log
+          sleep 5s
+          ipmitool sel list >sel.log
+          sleep 5s
+     fi
+
+}
+
 ###----------覆盖有无IO的热插拔测试---------###
 function Hot_Swap() {
 
-     #清除系统信息并收集Smart log
-     dmesg -C
-     sleep 5s
-     echo >/var/log/messages
-     sleep 5s
-     ipmitool sel clear
-     sleep 5s
-
-     #在整个热插拔测试前，做smart信息收集，在带IO的结束后进行第二次收集，目录在Hot_Swap下
-
-     echo -e "\n----------Create folder to collect smart_before----------\n"
+     System_log 0
      SmartInfo
      sleep 5s
-     echo -e "\n----------Finish SmartInfo_before Collect----------\n"
 
      #进行不带IO的热插拔测试，创建相关文件夹并在其中测试
      function Swap_NoneIO() {
@@ -421,7 +430,7 @@ function Hot_Swap() {
                cd /"$Dir_Pre"/Hot_Swap/NoneIO || exit
                umount /mnt
                echo -e "\n\numount the Device Please swap the $Test_Device\n"
-               sleep 30s
+               sleep 20s
 
                #拔出硬盘并在键盘输入，判定是否拔出硬盘
                read -r -p "Have the Device been removed? [Y/n] " input
@@ -448,14 +457,14 @@ function Hot_Swap() {
 
                #当把硬盘插入后，等待系统识别硬盘，然后记录此时系统内硬盘
                echo -e "\n\n Please Insert  drives\n"
-               sleep 30s
+               sleep 20s
 
                read -r -p "Have the Device been Inserted? [Y/n] " input
 
                case $input in
                [yY][eE][sS] | [yY])
                     echo -e "The Device been Inserted,wait to collect data\n"
-                    sleep 30s
+                    sleep 20s
                     ;;
 
                [nN][oO] | [nN])
@@ -469,7 +478,7 @@ function Hot_Swap() {
                     ;;
                esac
 
-               sleep 30s
+               sleep 20s
                echo -e "\n[ $(date "+%F %T") ]\n" >>process.log
                lsblk | tee -a process.log
 
@@ -490,7 +499,7 @@ function Hot_Swap() {
                sleep 5s
                cd /"$Dir_Pre"/Hot_Swap/NoneIO || exit
                umount /mnt
-               sleep 10s
+               sleep 5s
           done
      }
 
@@ -520,8 +529,7 @@ function Hot_Swap() {
 
                cd /"$Dir_Pre"/Hot_Swap/IO || exit
                umount /mnt
-               echo -e "\n\numount the Device,Ready Start Fio\n"
-               sleep 30s
+               sleep 5s
 
                #对分区2以及其他待测盘进行IO，等待IO起来，拔测试盘
                mkdir -p /"$Dir_Pre"/Hot_Swap/IO/"$Test_Device"
@@ -539,7 +547,7 @@ function Hot_Swap() {
                fio --ioengine=libaio --norandommap --thread --direct=1 --name=test --ramp_time=60 --runtime=300 --time_based --numjobs=4 --iodepth=64 --filename=/dev/"$Test_Device" --rw=randwrite --bs=4k >4k_"$Test_Device".log &
 
                sleep 60s
-               iostat -x 5 >iosta_all.log &
+               iostat -x 5 >> iostat_all.log &
                sleep 60s
 
                #等待60s，性能区域稳定，将测试硬盘拔出，其他硬盘此时应仍在测试中
@@ -571,14 +579,14 @@ function Hot_Swap() {
 
                #当把硬盘插入后，等待系统识别硬盘，然后记录此时系统内硬盘
                echo -e "\n\n Please Insert  drives\n"
-               sleep 30s
+               sleep 20s
 
                read -r -p "Have the Device been Inserted? [Y/n] " input
 
                case $input in
                [yY][eE][sS] | [yY])
                     echo -e "The Device been Inserted,wait to collect data\n"
-                    sleep 30s
+                    sleep 20s
                     ;;
 
                [nN][oO] | [nN])
@@ -592,7 +600,7 @@ function Hot_Swap() {
                     ;;
                esac
 
-               sleep 30s
+               sleep 20s
                echo -e "\n[ $(date "+%F %T") ]\n" >>process.log
                lsblk | tee -a process.log
 
@@ -621,29 +629,21 @@ function Hot_Swap() {
      Swap_IO
 
      ###-----------完成热插拔以后，收集Smart和系统log----------###
-
      cd /"$Dir_Pre"/Hot_Swap || exit
      SmartInfo
      sleep 10s
-
-     ###-----SmartInfo收集完成，收集系统信息-----###
-     dmesg >dmesg.log
-     sleep 5s
-     cat /var/log/messages >messages.log
-     sleep 5s
-     ipmitool sel list >sel.log
-     sleep 5s
+     System_log 1
 
 }
 
 function Hotplug_Raid() {
 
-     ###--------收集smartInfo_before----------###
      mkdir -p /"$Dir_Pre"/Raid
      cd /"$Dir_Pre"/Raid || exit
      Cur_Dir=$(pwd)
 
      SmartInfo
+     System_log 0
 
      #判定是否有Virtual disk
      Virtural_num=$(storcli64 /c0/vall show | grep -i "Virtual Drives :" -A 15 | grep -i "raid" | awk '{print $2}')
@@ -655,14 +655,6 @@ function Hotplug_Raid() {
           storcli64 /c0/fall delete
           sleep 30s
      fi
-
-     #清除系统信息并收集Smart log
-     dmesg -C
-     sleep 5s
-     echo >/var/log/messages
-     sleep 5s
-     ipmitool sel clear
-     sleep 5s
 
      #创建raid1
      storcli64 /c0/eall/sall set good force
@@ -683,7 +675,7 @@ function Hotplug_Raid() {
                EID=$(storcli /c0 show | grep -i "pd list" -A 15 | grep -i tb | awk '{print $'$EID_index'}' | awk -F ":" '{print $1}' | uniq)
                break
           else
-               echo "EID not {$EID_index}th,find the next"
+               echo "EID not {$EID_index}th,find the next "
           fi
      done
 
@@ -697,15 +689,15 @@ function Hotplug_Raid() {
           elif [ "$Slot_num" -gt 3 ]; then
                i=1
                j=2
-               while [ $(("$j" + 2)) -le "$Slot_num" ]; do
+               while [ "$j" -le "$Slot_num" ]; do
                     Slot_1=$(storcli64 /c0 show | grep -i "pd list" -A 20 | grep -i tb | grep "$Capacity" | awk '{print $1}' | awk -F ":" '{print $2}' | sed -n "$i"p)
                     Slot_2=$(storcli64 /c0 show | grep -i "pd list" -A 20 | grep -i tb | grep "$Capacity" | awk '{print $1}' | awk -F ":" '{print $2}' | sed -n "$j"p)
 
                     storcli64 /c0 add vd type=raid1 drive="$EID":"$Slot_1","$Slot_2"
                     sleep 5s
 
-                    ((i += 2)) | true
-                    ((j += 2)) | true
+                    i=$((i+2))
+                    j=$((j+2))
                done
           fi
 
@@ -774,14 +766,14 @@ function Hotplug_Raid() {
 
      #当把硬盘插入后，等待系统识别硬盘，然后记录此时系统内硬盘
      echo -e "\n Please Insert  drives\n"
-     sleep 30s
+     sleep 20s
 
      read -r -p "Have all the drives been Inserted? [Y/n] " input
 
      case $input in
      [yY][eE][sS] | [yY])
           echo -e "all the drives been Inserted,wait to collect data\n"
-          sleep 30s
+          sleep 20s
           ;;
 
      [nN][oO] | [nN])
@@ -795,10 +787,7 @@ function Hotplug_Raid() {
           ;;
      esac
 
-     echo -e "\n[ $(date "+%F %T") ]\n" >>process.log
-     wdckit s | tee -a process.log
-     storcli64 /c0 show | grep -i "vd list" -A 40 | tee -a process.log
-     sleep 15s
+     sleep 20s
      echo -e "\nCheck whether the devices is being rebuilt\n"
 
      #判定此时系统是否识别硬盘及正在rebuild
@@ -840,18 +829,127 @@ function Hotplug_Raid() {
      FIO_Block Third
 
      SmartInfo
+     System_log 1
 
-     ###-----SmartInfo收集完成，收集系统信息-----###
-     dmesg >dmesg.log
-     sleep 5s
-     cat /var/log/messages >messages.log
-     sleep 5s
-     ipmitool sel list >sel.log
-     sleep 5s
+     echo -e "\n\nFinish Hot_Raid\n\n"
+}
 
-     echo -e "\n\nFinish Test\n\n"
+function heat_exchange() {
+     mkdir -p /"$Dir_Pre"/heat_exchange
+     cd /"$Dir_Pre"/heat_exchange || exit
+
+     echo -e "\nStart Heat Exchange Test\n"
+
+     #将rebuild结束的所有硬盘变为Jbod模式
+     storcli64 /c0/vall delete force
+     storcli64 /c0/fall delete
+     storcli64 /c0/eall/sall set good force
+     storcli64 /c0/eall/sall set jbod
+
+     SmartInfo
+     System_log 0
+
+     Hot_Plug_Time=$(("$System_num" / 2))
+
+     for ((i = 0; i < "$Hot_Plug_Time"; i++)); do
+          echo -e "\nThis is ${Hot_Plug_Time}th Hot Plug\n"
+          sleep 10s
+
+          echo -e "\n\n[ $(date "+%F %T") ]\n\n" >>process.log
+          lsblk | tee -a process.log
+          sleep 3s
+
+          echo -e "\n\nPlease swap the $Test_Device\n"
+          sleep 30s
+
+          read -r -p "Have the Device been removed? [Y/n] " input
+
+          case $input in
+          [yY][eE][sS] | [yY])
+               echo -e "The Device been removed,wait to collect data\n"
+               ;;
+
+          [nN][oO] | [nN])
+               echo "Device need to removed"
+               exit 1
+               ;;
+
+          *)
+               echo "Invalid input..."
+               exit 1
+               ;;
+          esac
+
+          #将硬盘拔出，并使用lsblk将其记录
+          sleep 15s
+          echo -e "\n\n[ $(date "+%F %T") ]\n\n" >>process.log
+          lsblk | tee -a process.log
+
+          #当把硬盘插入后，等待系统识别硬盘，然后记录此时系统内硬盘
+          echo -e "\n\n Please Insert  drives\n"
+          sleep 30s
+
+          read -r -p "Have the Device been Inserted? [Y/n] " input
+
+          case $input in
+          [yY][eE][sS] | [yY])
+               echo -e "The Device been Inserted,wait to collect data\n"
+               sleep 30s
+               ;;
+
+          [nN][oO] | [nN])
+               echo "some drives need to Insert"
+               exit 1
+               ;;
+
+          *)
+               echo "Invalid input..."
+               exit 1
+               ;;
+          esac
+
+          sleep 30s
+          System_HDDnum=$(lsblk | grpe -c sd)
+          if [ "$System_HDDnum" -eq "$System_num" ]; then
+               echo -e "\n[ $(date "+%F %T") ]\n" >>process.log
+               lsblk | tee -a process.log
+          else
+               echo -e "\nHeat Exchange Test Fail,can't Identify all slot.\n"
+               exit 0
+          fi
+     done
+
+     sleep 20s
+
+     SmartInfo
+     System_log 1
+
+     echo -e "\n\nTest finish,Do Hot_add Manual"
 }
 
 Hot_Swap
 
 Hotplug_Raid
+
+###----判定前两项是否结束，手动开始热交换----###
+
+read -r -p "Finish Other test and begin heat_exchange [Y/n] ？" input
+
+          case $input in
+          [yY][eE][sS] | [yY])
+               echo -e "The Other test finish and begin heat_exchange \n"
+               heat_exchange
+               ;;
+
+          [nN][oO] | [nN])
+               echo "Wait manual test"
+               exit 1
+               ;;
+
+          *)
+               echo "Invalid input..."
+               exit 1
+               ;;
+          esac
+
+
