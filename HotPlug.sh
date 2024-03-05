@@ -11,8 +11,8 @@ echo -e "\nClear all log and mkdir Begin test\n"
 
 #脚本所在路径为Dir_pre
 Dir_Pre=$(pwd)
-mkdir -p /"$Dir_Pre"/Hot_Swap
-cd /"$Dir_Pre"/Hot_Swap || exit
+mkdir -p /"$Dir_Pre"/4_5_Hot_Swap
+cd /"$Dir_Pre"/4_5_Hot_Swap || exit
 
 ####----------系统变量----------###
 Raid_Status=$(storcli64 /c0 show | grep -i "PD List" -A 20 | grep EID:Slt -A 15 | grep -v '^-*$' | sed '1d' | awk '{for(i=1;i<NF;i++) {if ( $i == "SATA" || $i == "SAS" ) print $i}}' | uniq)
@@ -52,7 +52,7 @@ function SmartInfo() {
                          sn=$(smartctl -a -x /dev/"$hdd" | grep -i "serial" | awk '{print $NF}')
                          smartctl -a -x /dev/"$hdd" >smart_"$1"_"$hdd"_"$sn".log
                          if [ "$1" = "before" ]; then
-                              echo "$hdd" >>HDD_Slot.log
+                              echo "$hdd" >> HDD_Slot.log
                          fi
                     done
                fi
@@ -370,8 +370,8 @@ function Hot_Swap() {
 
      #进行不带IO的热插拔测试，创建相关文件夹并在其中测试
      function Swap_NoneIO() {
-          mkdir -p /"$Dir_Pre"/Hot_Swap/NoneIO
-          cd /"$Dir_Pre"/Hot_Swap/NoneIO || exit
+          mkdir -p /"$Dir_Pre"/4_5_Hot_Swap/NoneIO
+          cd /"$Dir_Pre"/4_5_Hot_Swap/NoneIO || exit
 
           echo -e "\nDo Swap_NoneIO first\n"
           sleep 5s
@@ -427,7 +427,7 @@ function Hot_Swap() {
                md5sum test >test.md5
                sleep 5s
 
-               cd /"$Dir_Pre"/Hot_Swap/NoneIO || exit
+               cd /"$Dir_Pre"/4_5_Hot_Swap/NoneIO || exit
                umount /mnt
                echo -e "\n\numount the Device Please swap the $Test_Device\n"
                sleep 20s
@@ -495,9 +495,9 @@ function Hot_Swap() {
                #进入/mnt文件夹，对比md5校验码，并回到Swap_NoneIO文件夹，取消挂载，开始下一块硬盘
 
                cd /mnt || exit
-               md5sum -c test.md5 >>/"$Dir_Pre"/Hot_Swap/NoneIO/process.log
+               md5sum -c test.md5 >>/"$Dir_Pre"/4_5_Hot_Swap/NoneIO/process.log
                sleep 5s
-               cd /"$Dir_Pre"/Hot_Swap/NoneIO || exit
+               cd /"$Dir_Pre"/4_5_Hot_Swap/NoneIO || exit
                umount /mnt
                sleep 5s
           done
@@ -506,8 +506,8 @@ function Hot_Swap() {
      Swap_NoneIO
 
      function Swap_IO() {
-          mkdir -p /"$Dir_Pre"/Hot_Swap/IO
-          cd /"$Dir_Pre"/Hot_Swap/IO || exit
+          mkdir -p /"$Dir_Pre"/4_5_Hot_Swap/IO
+          cd /"$Dir_Pre"/4_5_Hot_Swap/IO || exit
 
           echo -e "\nDo Swap_IO\n"
           sleep 5s
@@ -521,19 +521,19 @@ function Hot_Swap() {
 
           for Test_Device in $(wdckit s | grep -i "/dev/sd" | grep -vw "$bootdisk" | awk '{print $2}' | awk -F "/" '{print $3}' | awk 'NR%2 ==1'); do
                mount /dev/"$Test_Device"1 /mnt
-               dd if=/dev/urandom of=/mnt/test bs=1M count=1000 | tee -a process.log
+               dd if=/dev/urandom of=/mnt/test_IO bs=1M count=1000 | tee -a process.log
                sleep 5s
 
                cd /mnt || exit
-               md5sum test >test.md5
+               md5sum test_IO >test_IO.md5
 
-               cd /"$Dir_Pre"/Hot_Swap/IO || exit
+               cd /"$Dir_Pre"/4_5_Hot_Swap/IO || exit
                umount /mnt
                sleep 5s
 
                #对分区2以及其他待测盘进行IO，等待IO起来，拔测试盘
-               mkdir -p /"$Dir_Pre"/Hot_Swap/IO/"$Test_Device"
-               cd /"$Dir_Pre"/Hot_Swap/IO/"$Test_Device" || exit
+               mkdir -p /"$Dir_Pre"/4_5_Hot_Swap/IO/"$Test_Device"
+               cd /"$Dir_Pre"/4_5_Hot_Swap/IO/"$Test_Device" || exit
 
                ls /sys/block/ | grep sd | grep -v "$bootdisk" | sed '/'$Test_Device'/d' >block
 
@@ -616,9 +616,9 @@ function Hot_Swap() {
 
                #进入/mnt文件夹，对比md5校验码，并回到Swap_NoneIO文件夹，取消挂载，开始下一块硬盘
                cd /mnt || exit
-               md5sum -c test.md5 >>/"$Dir_Pre"/Hot_Swap/IO/process.log
+               md5sum -c test_IO.md5 >>/"$Dir_Pre"/4_5_Hot_Swap/IO/process.log
                sleep 5s
-               cd /"$Dir_Pre"/Hot_Swap/IO || exit
+               cd /"$Dir_Pre"/4_5_Hot_Swap/IO || exit
                umount /mnt
                killall fio
                sleep 3s
@@ -629,7 +629,7 @@ function Hot_Swap() {
      Swap_IO
 
      ###-----------完成热插拔以后，收集Smart和系统log----------###
-     cd /"$Dir_Pre"/Hot_Swap || exit
+     cd /"$Dir_Pre"/4_5_Hot_Swap || exit
      SmartInfo
      sleep 10s
      System_log 1
@@ -642,7 +642,6 @@ function Hotplug_Raid() {
      cd /"$Dir_Pre"/Raid || exit
      Cur_Dir=$(pwd)
 
-     SmartInfo
      System_log 0
 
      #判定是否有Virtual disk
@@ -708,6 +707,9 @@ function Hotplug_Raid() {
      Status=$(storcli64 /c0 show | grep -i "pd list" -A 20 | grep -i tb | awk '{print $3}' | uniq)
      if [ "$Status" = "Onln" ]; then
           echo -e "\nAll Device finish Raid1\n"
+          sleep 3s
+          SmartInfo
+          sleep 10s
      else
           echo -e "\nRaid1 build fail"
           exit 0
@@ -816,14 +818,14 @@ function Hotplug_Raid() {
 
      while [ "$Virtual_Status" = "Dgrd" ]; do
           sleep 1800s
-          Virtual_Status=$(storcli64 /c0/vall show | grep -i "rwtd" | awk '{print $3}' | sort -u)
+          Virtual_Status=$(storcli64 /c0/vall show | grep -i "rwtd" | awk '{print $3}' | sort -u | grep -v Optl)
      done
 
      sleep 300s
      echo -e "\nFinish Rebuild,Prepare Collect Log\n"
 
      echo -e "\n[ $(date "+%F %T") ]\n" >>process.log
-     wdckit s | te e -a process.log
+     wdckit s | tee -a process.log
      storcli64 /c0 show | grep -i "vd list" -A 40 | tee -a process.log
 
      FIO_Block Third
@@ -835,16 +837,24 @@ function Hotplug_Raid() {
 }
 
 function heat_exchange() {
-     mkdir -p /"$Dir_Pre"/heat_exchange
-     cd /"$Dir_Pre"/heat_exchange || exit
+     mkdir -p /"$Dir_Pre"/6_heat_exchange
+     cd /"$Dir_Pre"/6_heat_exchange || exit
 
      echo -e "\nStart Heat Exchange Test\n"
 
      #将rebuild结束的所有硬盘变为Jbod模式
      storcli64 /c0/vall delete force
+     sleep 5s
      storcli64 /c0/fall delete
+     sleep 5s
      storcli64 /c0/eall/sall set good force
-     storcli64 /c0/eall/sall set jbod
+     sleep 5s
+
+     for Slot_num in $(storcli64 /c0 show | grep -i "PD List" -A 20 | grep EID:Slt -A 15 | grep HDD |awk '{print $1}' |awk -F ":" '{print $2}')
+     do
+          storcli64 /c0/eall/s"$Slot_num" set jbod
+     done
+     sleep 5s
 
      SmartInfo
      System_log 0
@@ -852,15 +862,15 @@ function heat_exchange() {
      Hot_Plug_Time=$(("$System_num" / 2))
 
      for ((i = 0; i < "$Hot_Plug_Time"; i++)); do
-          echo -e "\nThis is ${Hot_Plug_Time}th Hot Plug\n"
+          echo -e "\nThis is ${i}th Hot Plug\n"
           sleep 10s
 
           echo -e "\n\n[ $(date "+%F %T") ]\n\n" >>process.log
           lsblk | tee -a process.log
           sleep 3s
 
-          echo -e "\n\nPlease swap the $Test_Device\n"
-          sleep 30s
+          echo -e "\n\nPlease swap the $i\n"
+          sleep 20s
 
           read -r -p "Have the Device been removed? [Y/n] " input
 
@@ -909,7 +919,7 @@ function heat_exchange() {
           esac
 
           sleep 30s
-          System_HDDnum=$(lsblk | grpe -c sd)
+          System_HDDnum=$(lsblk | grep -c sd)
           if [ "$System_HDDnum" -eq "$System_num" ]; then
                echo -e "\n[ $(date "+%F %T") ]\n" >>process.log
                lsblk | tee -a process.log
@@ -919,7 +929,10 @@ function heat_exchange() {
           fi
      done
 
+     echo "Please Exchange Device"
      sleep 20s
+     echo "Please Exchange Device"
+     sleep 30s
 
      SmartInfo
      System_log 1
