@@ -72,7 +72,7 @@ function SmartInfo() {
                     spin_Retry_Count=$(grep "Spin_Retry_Count" smart_"$1"_"$hdd"_"$sn".log | awk '{if($4 > $6) print "pass";else print "failed"}')
                     tem=$(grep "Temperature_Celsius" smart_"$1"_"$hdd"_"$sn".log | awk '{if($(NF-2) <= 60) print "pass";else print "failed"}')
                     offline=$(grep "Offline_Uncorrectable" smart_"$1"_"$hdd"_"$sn".log | awk '{if($NF == 0) print "pass";else print "failed"}')
-                    udma=$(grep "UDMA_CRC_Error_Count" smart_"$1"_"$hdd"_"$sn".log | awk '{print $NF}')
+                    udma=$(grep "UDMA_CRC_Error_Count" smart_"$1"_"$hdd"_"$sn".log | awk '{if($NF == 0) print "pass";else print "failed"}')
                     icrc=$(grep -i "ICRC" smart_"$1"_"$hdd"_"$sn".log | awk '{print $3}')
                     echo "$sn $hdd  $read_error $spin $reall $seek $spin_Retry_Count $tem $offline $udma $health   $icrc" >>"$1".log
                done <HDD_Slot.log
@@ -520,8 +520,9 @@ function Hot_Swap() {
           #开始进行热插拔操作，对每块盘挂载后生成文件以及MD5校验码
 
           for Test_Device in $(wdckit s | grep -i "/dev/sd" | grep -vw "$bootdisk" | awk '{print $2}' | awk -F "/" '{print $3}' | awk 'NR%2 ==1'); do
-               mount /dev/"$Test_Device"1 /mnt
-               dd if=/dev/urandom of=/mnt/test_IO bs=1M count=1000 | tee -a process.log
+               mkdir -p /mnt/"$Test_Device"
+               mount /dev/"$Test_Device"1 /mnt/"$Test_Device"
+               dd if=/dev/urandom of=/mnt/test_IO bs=1M count=1000 
                sleep 5s
 
                cd /mnt || exit
@@ -608,14 +609,14 @@ function Hot_Swap() {
                Online_num=$(wdckit s | grep "/dev/sd" | grep -vw "$bootdisk" | wc -l)
                if [ "$Online_num" = "$System_num" ]; then
                     echo -e "\nThe Device was Identified\n"
-                    mount /dev/"$Test_Device"1 /mnt
+                    mount /dev/"$Test_Device"1 /mnt/"$Test_Device"
                else
                     echo -e "\nThe Device wasn't Identified,restart test\n"
                     exit 1
                fi
 
                #进入/mnt文件夹，对比md5校验码，并回到Swap_NoneIO文件夹，取消挂载，开始下一块硬盘
-               cd /mnt || exit
+               cd /mnt/"$Test_Device" || exit
                md5sum -c test_IO.md5 >>/"$Dir_Pre"/4_5_Hot_Swap/IO/process.log
                sleep 5s
                cd /"$Dir_Pre"/4_5_Hot_Swap/IO || exit
@@ -643,6 +644,8 @@ function Hotplug_Raid() {
      Cur_Dir=$(pwd)
 
      System_log 0
+
+     SmartInfo
 
      #判定是否有Virtual disk
      Virtural_num=$(storcli64 /c0/vall show | grep -i "Virtual Drives :" -A 15 | grep -i "raid" | awk '{print $2}')
@@ -707,8 +710,6 @@ function Hotplug_Raid() {
      Status=$(storcli64 /c0 show | grep -i "pd list" -A 20 | grep -i tb | awk '{print $3}' | uniq)
      if [ "$Status" = "Onln" ]; then
           echo -e "\nAll Device finish Raid1\n"
-          sleep 3s
-          SmartInfo
           sleep 10s
      else
           echo -e "\nRaid1 build fail"
@@ -830,6 +831,11 @@ function Hotplug_Raid() {
 
      FIO_Block Third
 
+     sleep 60s
+     storcli64 /c0/vall delete 
+     storcli64 /c0/eall/sall set jbod
+     sleep 5s
+     
      SmartInfo
      System_log 1
 
