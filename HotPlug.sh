@@ -72,7 +72,7 @@ function SmartInfo() {
                     spin_Retry_Count=$(grep "Spin_Retry_Count" smart_"$1"_"$hdd"_"$sn".log | awk '{if($4 > $6) print "pass";else print "failed"}')
                     tem=$(grep "Temperature_Celsius" smart_"$1"_"$hdd"_"$sn".log | awk '{if($(NF-2) <= 60) print "pass";else print "failed"}')
                     offline=$(grep "Offline_Uncorrectable" smart_"$1"_"$hdd"_"$sn".log | awk '{if($NF == 0) print "pass";else print "failed"}')
-                    udma=$(grep "UDMA_CRC_Error_Count" smart_"$1"_"$hdd"_"$sn".log | awk '{if($NF == 0) print "pass";else print "failed"}')
+                    udma=$(grep "UDMA_CRC_Error_Count" smart_"$1"_"$hdd"_"$sn".log | awk '{print $NF}')
                     icrc=$(grep -i "ICRC" smart_"$1"_"$hdd"_"$sn".log | awk '{print $3}')
                     echo "$sn $hdd  $read_error $spin $reall $seek $spin_Retry_Count $tem $offline $udma $health   $icrc" >>"$1".log
                done <HDD_Slot.log
@@ -522,14 +522,14 @@ function Hot_Swap() {
           for Test_Device in $(wdckit s | grep -i "/dev/sd" | grep -vw "$bootdisk" | awk '{print $2}' | awk -F "/" '{print $3}' | awk 'NR%2 ==1'); do
                mkdir -p /mnt/"$Test_Device"
                mount /dev/"$Test_Device"1 /mnt/"$Test_Device"
-               dd if=/dev/urandom of=/mnt/test_IO bs=1M count=1000 
+               dd if=/dev/urandom of=/mnt/"$Test_Device"/test_IO bs=1M count=1000 
                sleep 5s
 
-               cd /mnt || exit
+               cd /mnt/"$Test_Device" || exit
                md5sum test_IO >test_IO.md5
 
                cd /"$Dir_Pre"/4_5_Hot_Swap/IO || exit
-               umount /mnt
+               umount /mnt/"$Test_Device"
                sleep 5s
 
                #对分区2以及其他待测盘进行IO，等待IO起来，拔测试盘
@@ -848,26 +848,11 @@ function heat_exchange() {
 
      echo -e "\nStart Heat Exchange Test\n"
 
-     #将rebuild结束的所有硬盘变为Jbod模式
-     storcli64 /c0/vall delete force
-     sleep 5s
-     storcli64 /c0/fall delete
-     sleep 5s
-     storcli64 /c0/eall/sall set good force
-     sleep 5s
-
-     for Slot_num in $(storcli64 /c0 show | grep -i "PD List" -A 20 | grep EID:Slt -A 15 | grep HDD |awk '{print $1}' |awk -F ":" '{print $2}')
-     do
-          storcli64 /c0/eall/s"$Slot_num" set jbod
-     done
-     sleep 5s
-
      SmartInfo
      System_log 0
 
-     Hot_Plug_Time=$(("$System_num" / 2))
-
-     for ((i = 0; i < "$Hot_Plug_Time"; i++)); do
+     for heat_exchange_Time in $(wdckit s | grep -i "/dev/sd" | grep -vw "$bootdisk" | awk '{print $2}' | awk -F "/" '{print $3}' | awk 'NR%2 ==1');do
+          i=1
           echo -e "\nThis is ${i}th Hot Plug\n"
           sleep 10s
 
@@ -875,7 +860,7 @@ function heat_exchange() {
           lsblk | tee -a process.log
           sleep 3s
 
-          echo -e "\n\nPlease swap the $i\n"
+          echo -e "\n\nPlease swap the $heat_exchange_Time\n"
           sleep 20s
 
           read -r -p "Have the Device been removed? [Y/n] " input
@@ -933,6 +918,8 @@ function heat_exchange() {
                echo -e "\nHeat Exchange Test Fail,can't Identify all slot.\n"
                exit 0
           fi
+
+          i=$((i+1))
      done
 
      echo "Please Exchange Device"
