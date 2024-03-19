@@ -16,7 +16,7 @@ cd /"$Dir_Pre"/4_5_Hot_Swap || exit
 
 ####----------系统变量----------###
 Raid_Status=$(storcli64 /c0 show | grep -i "PD List" -A 20 | grep EID:Slt -A 15 | grep -v '^-*$' | sed '1d' | awk '{for(i=1;i<NF;i++) {if ( $i == "SATA" || $i == "SAS" ) print $i}}' | uniq)
-AHCI_Status=$(wdckit s | grep Port -A 10 | awk '{print $3}' | grep -v '^-*$' | sed 1d | uniq)
+AHCI_Status=$(wdckit s | grep Port -A 10 | awk '{print $3}' | grep -v '^-*$' | sed 1d | uniq |grep SA)
 Controller_Status=$(storcli64 /c0 show | grep Status | awk '{print $NF}')
 Device_Status=$(storcli64 /c0 show | grep -i "pd list" -A 20 | grep HDD | awk '{print $3}' | sort -u)
 Device_Type=$(storcli64 /c0 show | grep -i "pd list" -A 20 | grep HDD | awk '{print $NF}' | sort -u)
