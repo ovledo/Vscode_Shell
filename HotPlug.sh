@@ -3,6 +3,15 @@
 #开始HotPlug(mount Device),并进行检查;(此时硬盘状态已为JBOD并且所有分区及内容全部删除)
 #wipefs -af /dev/sd*
 
+####----------确认系统盘----------###
+bootdisk=$(df -h | grep -i boot | awk '{print $1}' | grep -iE "/dev/sd" | sed 's/[0-9]//g' | sort -u | awk -F "/" '{print $NF}')
+if test -z "$bootdisk"; then
+     bootdisk=$(df -h | grep -i boot | awk '{print $1}' | grep -iE "/dev/nvme" | sed 's/p[0-9]//g' | sort -u | awk -F "/" '{print $NF}')
+     echo "os disk is $bootdisk"
+else
+     echo "os disk is $bootdisk"
+fi
+
 for Clear in $(wdckit s | grep -i "/dev/sd" | grep -vw "$bootdisk" | awk '{print $2}'); do
      wipefs -af "$Clear"
      sleep 5s
@@ -21,15 +30,6 @@ Controller_Status=$(storcli64 /c0 show | grep Status | awk '{print $NF}')
 Device_Status=$(storcli64 /c0 show | grep -i "pd list" -A 20 | grep HDD | awk '{print $3}' | sort -u)
 Device_Type=$(storcli64 /c0 show | grep -i "pd list" -A 20 | grep HDD | awk '{print $NF}' | sort -u)
 System_num=$(storcli64 /c0 show | grep -i "pd list" -A 20 | grep -c HDD)
-
-####----------确认系统盘----------###
-bootdisk=$(df -h | grep -i boot | awk '{print $1}' | grep -iE "/dev/sd" | sed 's/[0-9]//g' | sort -u | awk -F "/" '{print $NF}')
-if test -z "$bootdisk"; then
-     bootdisk=$(df -h | grep -i boot | awk '{print $1}' | grep -iE "/dev/nvme" | sed 's/p[0-9]//g' | sort -u | awk -F "/" '{print $NF}')
-     echo "os disk is $bootdisk"
-else
-     echo "os disk is $bootdisk"
-fi
 
 ####----------调用SmartInfo----------###
 
