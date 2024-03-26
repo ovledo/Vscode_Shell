@@ -55,8 +55,8 @@ function FIO_Data() {
     done <block
 
     for speed in "${Fan_SpeedRun[@]}"; do
-
-        echo -e "\nIt's $speed% now\n"
+        echo -e "\n\n[ $(date "+%F %T") ]" >>process.log
+        echo -e "\nIt's $speed% now\n" | tee -a Fan_Speed.log
         ipmitool raw 0x3a 0x0d 0xff "$speed"
         sleep 60s
         ipmitool sdr | grep -i "speed" | tee -a Fan_Speed.log
