@@ -22,7 +22,9 @@ function Run_Cycle() {
         mkdir -p /"$PWD_System"/Test_"$i"Cycle
         cd /"$PWD_System"/Test_"$i"Cycle || exit
         FIO_Data
+        wait
         Data_Compare
+        wait
     done
 
 }
@@ -64,12 +66,12 @@ function FIO_Data() {
         echo -e "\n----------Do Sequential Write----------\n"
 
         fio jobfile_sw --ioengine=libaio --randrepeat=0 --norandommap --thread --direct=1 --group_reporting --ramp_time=60 --runtime=300 --time_based --numjobs=1 --iodepth=32 --rw=write --bs=1M --log_avg_msec=1000 --write_iops_log=1M_seqW_iops.log --new_group | tee -a "$PWD_Test"/Test_case/fio_128k_seqwrite_"$speed"%_result.txt &
-        sleep 400s
+        wait
 
         echo -e "\n----------Do Random Write----------\n"
 
         fio jobfile_rw --ioengine=libaio --randrepeat=0 --norandommap --thread --direct=1 --group_reporting --ramp_time=60 --runtime=300 --time_based --numjobs=1 --iodepth=64 --rw=randwrite --bs=4k --log_avg_msec=1000 --write_iops_log=4K_randW_iops.log --new_group | tee -a "$PWD_Test"/Test_case/fio_4k_randwrite_${speed}%_result.txt &
-        sleep 400s
+        wait
 
     done
     echo -e "\n\n FIO_Performance Finish,Collect bin_file and do data Compare \n\n"
@@ -94,13 +96,13 @@ function Data_Compare() {
     n=2
     result_arr[0]=Slot
     result_arr[1]=SN
-    for sw_speed in "${Fan_Speed[@]}"; do
+    for sw_speed in "${Fan_SpeedRun[@]}"; do
         sw_result=SW_128K_"$sw_speed"%
         result_arr["$n"]="$sw_result"
         n=$(("$n" + 1))
     done
 
-    for rw_speed in "${Fan_Speed[@]}"; do
+    for rw_speed in "${Fan_SpeedRun[@]}"; do
         rw_result=RW_4k_"$rw_speed"%
         result_arr["$n"]="$rw_result"
         n=$(("$n" + 1))
