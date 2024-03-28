@@ -16,19 +16,6 @@ for HDD_Slot in $(wdckit s | grep -i "dev/sd" | grep -i "no" | awk '{print $2}' 
 done
 echo -e "\ncollect Smr binfile_before finish. \n"
 
-function Run_Cycle() {
-    Cycle=$1
-    for ((i = 1; i <= "$Cycle"; i++)); do
-        mkdir -p /"$PWD_System"/Test_"$i"Cycle
-        cd /"$PWD_System"/Test_"$i"Cycle || exit
-        FIO_Data
-        wait
-        Data_Compare
-        wait
-    done
-
-}
-
 function FIO_Data() {
     OS_disk=$(wdckit s | grep -i "bootdevice" -A 20 | grep -i "yes" | awk '{print $2}' | awk -F "/" '{print $3}')
     echo -e "OS_disk is $OS_disk\n"
@@ -156,6 +143,19 @@ function Data_Compare() {
 
         cat result_sum.log |column -t > restlt_sort.log
     done
+}
+
+function Run_Cycle() {
+    Cycle=$1
+    for ((i = 1; i <= "$Cycle"; i++)); do
+        mkdir -p /"$PWD_System"/Test_"$i"Cycle
+        cd /"$PWD_System"/Test_"$i"Cycle || exit
+        FIO_Data
+        wait
+        Data_Compare
+        wait
+    done
+
 }
 
 Run_Cycle "$@"
