@@ -9,6 +9,7 @@ https://farseerfc.me/zhs/history-of-chs-addressing.html
 https://blog.csdn.net/weixin_43424368/article/details/106712500
 [Python处理Excel]https://blog.csdn.net/weixin_44288604/article/details/120731317  
 [Connect443报错]https://gitcode.csdn.net/65e6edff1a836825ed7887d5.html?dp_token=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpZCI6MTQ2NTkwNiwiZXhwIjoxNzExMzc2MDIwLCJpYXQiOjE3MTA3NzEyMjAsInVzZXJuYW1lIjoiaXJlbGlhWiJ9.uAcWwI6YKPuXR0bhKGeYFlPwtH5gWzCPE8GWUpBPIaw  
+[Excel合并]https://blog.csdn.net/weixin_63986098/article/details/132517793
 
 
 
